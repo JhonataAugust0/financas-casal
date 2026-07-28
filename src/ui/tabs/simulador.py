@@ -21,8 +21,9 @@ def render_simulador_tab(
 
     current_allowance = user_a.allowance
     st.info(
-        f"💡 Baseado na mesada igualitária atual: "
-        f"**R$ {current_allowance:.2f}** para cada."
+        f"💡 Baseado no Custo de Vida Compartilhado (🏠 **O NOSSO**) e na mesada igualitária de "
+        f"**R\\$ {current_allowance:.2f}** para cada um.\n\n"
+        f"*Nota: Gastos pessoais (👤 **O MEU / O SEU**) saem da mesada individual e não inflam o Bolo Central.*"
     )
 
     # Run simulation
@@ -51,20 +52,20 @@ def render_simulador_tab(
 
     deficit_rescued = total_allowance_joint - total_allowance_separated
 
-    # ── Visual alerts ──
+    # ── Visual alerts (R\$ escaped to prevent LaTeX math rendering) ──
     if deficit_rescued > 0:
         st.error(
             f"⚠️ **Alerta de Déficit no Modelo Separado!** \n\n"
             f"Matematicamente, um de vocês não consegue pagar o próprio "
-            f"custo de vida e tirar os R$ {current_allowance:.2f} de mesada "
-            f"integral. O aporte de R$ {result.power_separated:.2f} do "
+            f"custo de vida e tirar os R\\$ {current_allowance:.2f} de mesada "
+            f"integral. O aporte de R\\$ {result.power_separated:.2f} do "
             f"cenário separado é uma ilusão que esconde um parceiro no "
             f"vermelho."
         )
         st.success(
             f"🤝 **O Benefício de Juntar:** A conta conjunta sacrifica "
-            f"R$ {abs(delta_contribution):.2f} do aporte, mas **garante "
-            f"R$ {deficit_rescued:.2f} a mais em mesada**, resgatando o "
+            f"R\\$ {abs(delta_contribution):.2f} do aporte, mas **garante "
+            f"R\\$ {deficit_rescued:.2f} a mais em mesada**, resgatando o "
             f"parceiro e garantindo o mesmo padrão de vida para ambos."
         )
     else:
@@ -93,8 +94,8 @@ def render_simulador_tab(
         )
 
     st.caption(
-        f"No modelo SEPARADO: Aporte de R$ {result.power_separated:.2f} "
-        f"| Mesada Total Realizada de R$ {total_allowance_separated:.2f}"
+        f"No modelo SEPARADO: Aporte de R\\$ {result.power_separated:.2f} "
+        f"| Mesada Total Realizada de R\\$ {total_allowance_separated:.2f}"
     )
 
     # ── Stacked bar chart ──

@@ -20,6 +20,7 @@ class Expense:
     type: str  # 'FIXED' or 'PERIODIC'
     value: float
     frequency_months: int = 1
+    scope: str = "SHARED"  # 'SHARED' ("O NOSSO") or 'PERSONAL' ("O MEU / O SEU")
 
 
 @dataclass
@@ -37,6 +38,7 @@ class Goal:
 @dataclass
 class JointSimulationResult:
     """Result of the joint income simulation (Ganha ou Perde)."""
+
     power_separated: float
     power_joint: float
     allowance_separated: float

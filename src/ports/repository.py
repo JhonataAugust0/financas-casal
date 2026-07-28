@@ -38,7 +38,24 @@ class FinancialRepository(ABC):
         expense_type: str,
         value: float,
         frequency_months: int,
+        scope: str = "SHARED",
     ) -> None:
+        ...
+
+    @abstractmethod
+    def update_expense(
+        self,
+        expense_id: int,
+        name: str,
+        expense_type: str,
+        value: float,
+        frequency_months: int,
+        scope: str = "SHARED",
+    ) -> None:
+        ...
+
+    @abstractmethod
+    def delete_expense(self, expense_id: int) -> None:
         ...
 
     # ── Goals ──────────────────────────────────────────────────────

@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS expenses (
     type TEXT CHECK(type IN ('FIXED', 'PERIODIC')),
     value REAL NOT NULL,
     frequency_months INTEGER DEFAULT 1,
+    scope TEXT DEFAULT 'SHARED', -- 'SHARED' ("O NOSSO") or 'PERSONAL' ("O MEU / O SEU")
     FOREIGN KEY(user_id) REFERENCES users(id)
 );
 

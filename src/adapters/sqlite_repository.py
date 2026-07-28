@@ -12,6 +12,16 @@ class SQLiteRepository(FinancialRepository):
     def __init__(self, db_path: str = "finance_mvp.db") -> None:
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        self._ensure_schema()
+
+    def _ensure_schema(self) -> None:
+        """Auto-migrate columns if missing in local SQLite database."""
+        cursor = self._conn.cursor()
+        cursor.execute("PRAGMA table_info(expenses)")
+        columns = [row["name"] for row in cursor.fetchall()]
+        if "scope" not in columns:
+            cursor.execute("ALTER TABLE expenses ADD COLUMN scope TEXT DEFAULT 'SHARED'")
+            self._conn.commit()
 
     # ── Users ──────────────────────────────────────────────────────
     def get_user(self, user_id: str) -> User | None:
@@ -57,6 +67,7 @@ class SQLiteRepository(FinancialRepository):
                 type=row["type"],
                 value=float(row["value"]),
                 frequency_months=int(row["frequency_months"]),
+                scope=row["scope"] if ("scope" in row.keys() and row["scope"]) else "SHARED",
             )
             for row in cursor.fetchall()
         ]
@@ -68,11 +79,31 @@ class SQLiteRepository(FinancialRepository):
         expense_type: str,
         value: float,
         frequency_months: int,
+        scope: str = "SHARED",
     ) -> None:
         self._conn.execute(
-            "INSERT INTO expenses (user_id, name, type, value, frequency_months) VALUES (?, ?, ?, ?, ?)",
-            (user_id, name, expense_type, value, frequency_months),
+            "INSERT INTO expenses (user_id, name, type, value, frequency_months, scope) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, name, expense_type, value, frequency_months, scope),
         )
+        self._conn.commit()
+
+    def update_expense(
+        self,
+        expense_id: int,
+        name: str,
+        expense_type: str,
+        value: float,
+        frequency_months: int,
+        scope: str = "SHARED",
+    ) -> None:
+        self._conn.execute(
+            "UPDATE expenses SET name=?, type=?, value=?, frequency_months=?, scope=? WHERE id=?",
+            (name, expense_type, value, frequency_months, scope, expense_id),
+        )
+        self._conn.commit()
+
+    def delete_expense(self, expense_id: int) -> None:
+        self._conn.execute("DELETE FROM expenses WHERE id=?", (expense_id,))
         self._conn.commit()
 
     # ── Goals ──────────────────────────────────────────────────────

@@ -11,7 +11,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from dotenv import load_dotenv
 import streamlit as st
+
+load_dotenv()
 
 from src.domain.financial_calculator import FinancialCalculator
 from src.domain.models import Expense
@@ -24,31 +27,42 @@ from src.ui.tabs.simulador import render_simulador_tab
 
 
 def _resolve_repository() -> FinancialRepository:
-    """Factory: pick the data adapter based on environment config."""
-    adapter = os.environ.get("ADAPTER", "sqlite").lower()
+    """Factory: pick the data adapter based on environment config or Streamlit secrets."""
+    adapter = os.environ.get("ADAPTER")
+    if not adapter and hasattr(st, "secrets") and "ADAPTER" in st.secrets:
+        adapter = st.secrets["ADAPTER"]
+    adapter = (adapter or "sqlite").lower()
+
     if adapter == "supabase":
         from src.adapters.supabase_repository import SupabaseRepository
-        return SupabaseRepository()
+
+        url = os.environ.get("SUPABASE_URL")
+        if not url and hasattr(st, "secrets") and "SUPABASE_URL" in st.secrets:
+            url = st.secrets["SUPABASE_URL"]
+
+        key = os.environ.get("SUPABASE_KEY")
+        if not key and hasattr(st, "secrets") and "SUPABASE_KEY" in st.secrets:
+            key = st.secrets["SUPABASE_KEY"]
+
+        return SupabaseRepository(url=url, key=key)
+
     from src.adapters.sqlite_repository import SQLiteRepository
+
     return SQLiteRepository()
 
 
 def _compute_monthly_cost(
     calc: FinancialCalculator, expenses: list[Expense]
 ) -> float:
-    """Derive monthly cost from a list of expenses."""
-    fixed = [e.value for e in expenses if e.type == "FIXED"]
-    periodic = [
-        {"amount": e.value, "months": e.frequency_months}
-        for e in expenses
-        if e.type == "PERIODIC"
-    ]
-    return calc.calculate_monthly_cost(fixed, periodic)
+    """Derive monthly living cost (O NOSSO / SHARED) from a list of expenses."""
+    return calc.calculate_monthly_cost_from_expenses(expenses, scope_filter="SHARED")
 
 
 def main() -> None:
     """Application entry point."""
-    st.set_page_config(page_title="Finanças em Parceria", layout="centered")
+    st.set_page_config(
+        page_title="Entre Finanças e Amassos", page_icon="💸", layout="centered"
+    )
     inject_custom_css()
 
     repo = _resolve_repository()
@@ -57,7 +71,7 @@ def main() -> None:
     st.title("🌱 Nossa Vida Financeira")
 
     tab_resumo, tab_orcamento, tab_metas, tab_simulador = st.tabs(
-        ["📊 Resumo", "💰 Orçamento", "🎯 Metas", "⚖️ Modelos de Gestão de Renda"]
+        ["📊 Resumo", " Orçamento", " Metas", " Modelos de Gestão de Renda"]
     )
 
     # ── Shared data (fetched once) ──
@@ -74,7 +88,7 @@ def main() -> None:
 
     # ── Delegate to tabs ──
     with tab_resumo:
-        render_resumo_tab(calc, user_a, user_b, expenses_a, expenses_b, cost_a, cost_b)
+        render_resumo_tab(repo, calc, user_a, user_b, expenses_a, expenses_b, cost_a, cost_b)
 
     with tab_orcamento:
         render_orcamento_tab(repo, user_a, user_b)

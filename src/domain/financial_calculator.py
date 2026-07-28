@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 
-from src.domain.models import Goal, JointSimulationResult
+from src.domain.models import Expense, Goal, JointSimulationResult
 
 
 class FinancialCalculator:
@@ -21,6 +21,28 @@ class FinancialCalculator:
             if item.get("months", 1.0) > 0
         )
         return round(total_fixed + total_periodic, 2)
+
+    def calculate_monthly_cost_from_expenses(
+        self,
+        expenses: list[Expense],
+        scope_filter: str | None = "SHARED",
+    ) -> float:
+        """Compute total monthly cost from Expense domain models.
+
+        If `scope_filter` is 'SHARED' ("O NOSSO"), only shared living expenses are included.
+        If `scope_filter` is 'PERSONAL' ("O MEU / O SEU"), only personal allowance expenses are included.
+        If `scope_filter` is None, all expenses are included.
+        """
+        filtered = [
+            e for e in expenses if scope_filter is None or e.scope == scope_filter
+        ]
+        fixed = [e.value for e in filtered if e.type == "FIXED"]
+        periodic = [
+            {"amount": e.value, "months": e.frequency_months}
+            for e in filtered
+            if e.type == "PERIODIC"
+        ]
+        return self.calculate_monthly_cost(fixed, periodic)
 
     def simulate_joint_income(
         self,

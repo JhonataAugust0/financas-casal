@@ -8,18 +8,31 @@ from src.domain.models import User
 from src.ports.repository import FinancialRepository
 
 
+def _get_partner_emoji(user: User) -> str:
+    """Return specific partner emoji based on name or ID."""
+    name_lower = user.name.lower()
+    if "docinho" in name_lower or user.id == "A":
+        return "👩🏿"
+    if "gracinha" in name_lower or user.id == "B":
+        return "👨🏿"
+    return "👤"
+
+
 def render_orcamento_tab(
     repo: FinancialRepository,
     user_a: User,
     user_b: User,
 ) -> None:
     """Render the complete 💰 Orçamento tab."""
-    st.subheader("💰 Definição de Orçamento e Renda")
+    st.subheader("Definição de Orçamento e Renda")
     st.markdown("Defina quanto entra e o teto da mesada (igual para ambos).")
+
+    emoji_a = _get_partner_emoji(user_a)
+    emoji_b = _get_partner_emoji(user_b)
 
     col_a, col_b = st.columns(2)
     with col_a:
-        st.markdown(f"#### {user_a.name}")
+        st.markdown(f"#### {emoji_a} {user_a.name}")
         new_income_a = st.number_input(
             "Renda Líquida (R$)",
             min_value=0.0,
@@ -37,7 +50,7 @@ def render_orcamento_tab(
         )
 
     with col_b:
-        st.markdown(f"#### {user_b.name}")
+        st.markdown(f"#### {emoji_b} {user_b.name}")
         new_income_b = st.number_input(
             "Renda Líquida (R$)",
             min_value=0.0,
@@ -55,7 +68,7 @@ def render_orcamento_tab(
         )
 
     st.markdown("---")
-    st.markdown("#### 💸 Mesada Igualitária")
+    st.markdown("#### Mesada Igualitária")
     current_allowance = float(user_a.allowance)
     new_allowance = st.number_input(
         "Valor da Mesada (Para CADA UM retirar do caixa)",
@@ -77,28 +90,43 @@ def render_orcamento_tab(
     st.divider()
 
     with st.expander(
-        "⚙️ Gerenciar Custo de Vida Autônomo (Despesas Fixas)", expanded=False
+        "⚙️ Gerenciar Custo de Vida Autônomo (Despesas Fixas/Periódicas)", expanded=False
     ):
         owner = st.selectbox(
             "Quem é o dono desta despesa?", [user_a.name, user_b.name]
         )
         exp_name = st.text_input(
-            "Nome da Despesa", placeholder="Ex: Aluguel, Farmácia"
+            "Nome da Despesa", placeholder="Ex: Terapia, Farmácia, Higiene"
+        )
+        exp_scope = st.radio(
+            "Quem Paga?",
+            [
+                "🏠 Nosso",
+                "👤 Meu",
+            ],
+            key="exp_scope_orcamento",
         )
         exp_type = st.radio(
-            "Tipo", ["Fixa (Mensal)", "Periódica (Anual/Semestral)"]
+            "Tipo", ["Fixa 📌", "Periódica 🗓️"]
         )
         exp_value = st.number_input("Valor (R$)", min_value=0.0, step=10.0)
-        frequency = (
-            st.slider("Meses?", 2, 12, 12)
-            if "Periódica" in str(exp_type)
-            else 1
+        frequency = st.number_input(
+            "Periodicidade em Meses",
+            min_value=1,
+            max_value=24,
+            value=12,
+            help="Ex: 12 para despesa anual, 6 para semestral, 2 para bimestral. Ignorado para custos mensais.",
+            key="exp_freq_orcamento",
         )
 
         if st.button("Adicionar Despesa"):
             if exp_name and exp_value > 0:
                 user_id = "A" if owner == user_a.name else "B"
-                db_type = "FIXED" if "Fixa" in str(exp_type) else "PERIODIC"
-                repo.add_expense(user_id, exp_name, db_type, exp_value, frequency)
+                is_fixed = "Fixa" in str(exp_type)
+                db_type = "FIXED" if is_fixed else "PERIODIC"
+                final_freq = 1 if is_fixed else int(frequency)
+                db_scope = "SHARED" if "O NOSSO" in exp_scope else "PERSONAL"
+                
+                repo.add_expense(user_id, exp_name, db_type, exp_value, final_freq, db_scope)
                 st.success("Despesa adicionada!")
                 st.rerun()

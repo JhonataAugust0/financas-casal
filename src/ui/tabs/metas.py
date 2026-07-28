@@ -195,14 +195,13 @@ def _render_category_card(
         # Maintenance toggle — ONLY inside safety card
         if is_safety:
             st.toggle(
-                "Ativar Modo Manutenção na Reserva (Inclui a Mesada)",
+                "Modo Manutenção na Reserva (Inclui a Mesada)",
                 key="toggle_manutencao",
                 help=(
                     "Ativado: A meta cresce para cobrir boletos + mesada. "
                     "Desativado: Cobre apenas os boletos básicos."
                 ),
             )
-            st.write("---")
 
         st.markdown(
             f"<div style='display: flex; gap: 8px; margin-bottom: 16px;'>"

@@ -3,10 +3,9 @@ name = "financas-amassos"
 version = "0.2.0"
 description = "MVP de Web App mobile-first de gestão financeira para casais"
 authors = [
-    {name = "Jhonata Augusto",email = "jhon.augustosilva@gmail.com"}
+    {name = "Jhonata Augusto", email = "jhon.augustosilva@gmail.com"}
 ]
 readme = "README.md"
-packages = [{include = "src"}]
 requires-python = "^3.11"
 dependencies = [
     "streamlit (>=1.60.0,<2.0.0)",
@@ -16,6 +15,8 @@ dependencies = [
     "python-dotenv (>=1.0.0,<2.0.0)"
 ]
 
+[tool.poetry]
+package-mode = false
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

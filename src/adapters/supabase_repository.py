@@ -16,8 +16,12 @@ class SupabaseRepository(FinancialRepository):
         url: str | None = None,
         key: str | None = None,
     ) -> None:
-        supabase_url = url or os.environ["SUPABASE_URL"]
-        supabase_key = key or os.environ["SUPABASE_KEY"]
+        supabase_url = url or os.environ.get("SUPABASE_URL", "")
+        supabase_key = key or os.environ.get("SUPABASE_KEY", "")
+        if not supabase_url or not supabase_key:
+            raise ValueError(
+                "SUPABASE_URL and SUPABASE_KEY must be provided or set in environment."
+            )
         self._client: Client = create_client(supabase_url, supabase_key)
 
     # ── helpers ────────────────────────────────────────────────────
@@ -38,6 +42,7 @@ class SupabaseRepository(FinancialRepository):
             type=row["type"],
             value=float(row["value"]),
             frequency_months=int(row.get("frequency_months", 1)),
+            scope=row.get("scope") or "SHARED",
         )
 
     def _row_to_goal(self, row: dict) -> Goal:
@@ -58,12 +63,12 @@ class SupabaseRepository(FinancialRepository):
             self._client.table("users")
             .select("*")
             .eq("id", user_id)
-            .maybe_single()
+            .limit(1)
             .execute()
         )
-        if response.data is None:
+        if not response or not response.data:
             return None
-        return self._row_to_user(response.data)
+        return self._row_to_user(response.data[0])
 
     def update_user_income(self, user_id: str, income: float) -> None:
         self._client.table("users").update({"income": income}).eq(
@@ -88,7 +93,8 @@ class SupabaseRepository(FinancialRepository):
             .eq("user_id", user_id)
             .execute()
         )
-        return [self._row_to_expense(r) for r in (response.data or [])]
+        data = response.data if (response and response.data) else []
+        return [self._row_to_expense(r) for r in data]
 
     def add_expense(
         self,
@@ -97,6 +103,7 @@ class SupabaseRepository(FinancialRepository):
         expense_type: str,
         value: float,
         frequency_months: int,
+        scope: str = "SHARED",
     ) -> None:
         self._client.table("expenses").insert(
             {
@@ -105,13 +112,37 @@ class SupabaseRepository(FinancialRepository):
                 "type": expense_type,
                 "value": value,
                 "frequency_months": frequency_months,
+                "scope": scope,
             }
         ).execute()
+
+    def update_expense(
+        self,
+        expense_id: int,
+        name: str,
+        expense_type: str,
+        value: float,
+        frequency_months: int,
+        scope: str = "SHARED",
+    ) -> None:
+        self._client.table("expenses").update(
+            {
+                "name": name,
+                "type": expense_type,
+                "value": value,
+                "frequency_months": frequency_months,
+                "scope": scope,
+            }
+        ).eq("id", expense_id).execute()
+
+    def delete_expense(self, expense_id: int) -> None:
+        self._client.table("expenses").delete().eq("id", expense_id).execute()
 
     # ── Goals ──────────────────────────────────────────────────────
     def get_goals(self) -> list[Goal]:
         response = self._client.table("goals").select("*").execute()
-        return [self._row_to_goal(r) for r in (response.data or [])]
+        data = response.data if (response and response.data) else []
+        return [self._row_to_goal(r) for r in data]
 
     def update_goals(self, goals: list[Goal]) -> None:
         for goal in goals:
@@ -178,11 +209,12 @@ class SupabaseRepository(FinancialRepository):
             self._client.table("goals")
             .select("id")
             .eq("category", "🛡️ Segurança")
-            .maybe_single()
+            .limit(1)
             .execute()
         )
 
-        if response.data:
+        if response and response.data and len(response.data) > 0:
+            goal_id = response.data[0]["id"]
             self._client.table("goals").update(
                 {
                     "name": item_name,
@@ -190,7 +222,7 @@ class SupabaseRepository(FinancialRepository):
                     "target_value": target_value,
                     "priority": 1,
                 }
-            ).eq("id", response.data["id"]).execute()
+            ).eq("id", goal_id).execute()
         else:
             self._client.table("goals").insert(
                 {
