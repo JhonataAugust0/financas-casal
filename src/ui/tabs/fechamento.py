@@ -33,7 +33,7 @@ def _render_periodic_radar(
     if not periodic_expenses:
         return {}
 
-    st.markdown("#### 🔔 Radar de Compras Periódicas")
+    st.markdown("#### Radar de Compras Periódicas")
     st.caption(
         "Marque com **1 clique** os produtos periódicos que foram comprados neste mês. "
         "O aplicativo preencherá automaticamente o valor cheio do produto no fechamento."
@@ -154,7 +154,7 @@ def _render_budget_vs_actual(
     user_b: User,
 ) -> None:
     """Section A: Monthly expense closing — budget vs actual values."""
-    st.markdown("### 🧾 Orçado vs. Realizado")
+    st.markdown("### Orçado vs. Realizado")
 
     # Month selector
     today = date.today()
