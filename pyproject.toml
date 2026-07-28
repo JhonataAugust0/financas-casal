@@ -1,0 +1,29 @@
+[project]
+name = "financas-amassos"
+version = "0.2.0"
+description = "MVP de Web App mobile-first de gestão financeira para casais"
+authors = [
+    {name = "Jhonata Augusto",email = "jhon.augustosilva@gmail.com"}
+]
+readme = "README.md"
+packages = [{include = "src"}]
+requires-python = "^3.11"
+dependencies = [
+    "streamlit (>=1.60.0,<2.0.0)",
+    "pandas (>=3.0.5,<4.0.0)",
+    "altair (>=6.2.2,<7.0.0)",
+    "supabase (>=2.0.0,<3.0.0)",
+    "python-dotenv (>=1.0.0,<2.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[dependency-groups]
+dev = [
+    "pytest (>=9.1.1,<10.0.0)",
+    "mypy (>=2.3.0,<3.0.0)",
+    "ruff (>=0.16.0,<0.17.0)"
+]

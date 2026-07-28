@@ -1,0 +1,7 @@
+# .streamlit/config.toml
+[theme]
+primaryColor = "#FFB7B2" # Salmão/Rosa Pastel
+backgroundColor = "#FAFAFA" # Branco Gelo (Clean)
+secondaryBackgroundColor = "#F4F1F1" # Cinza bem claro/Pastel
+textColor = "#4A4A4A" # Cinza escuro para leitura confortável
+font = "sans serif"
