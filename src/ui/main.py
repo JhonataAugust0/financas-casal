@@ -29,20 +29,30 @@ from src.ui.tabs.simulador import render_simulador_tab
 def _resolve_repository() -> FinancialRepository:
     """Factory: pick the data adapter based on environment config or Streamlit secrets."""
     adapter = os.environ.get("ADAPTER")
-    if not adapter and hasattr(st, "secrets") and "ADAPTER" in st.secrets:
-        adapter = st.secrets["ADAPTER"]
+    if not adapter:
+        try:
+            adapter = st.secrets.get("ADAPTER")
+        except Exception:
+            adapter = None
+
     adapter = (adapter or "sqlite").lower()
 
     if adapter == "supabase":
         from src.adapters.supabase_repository import SupabaseRepository
 
         url = os.environ.get("SUPABASE_URL")
-        if not url and hasattr(st, "secrets") and "SUPABASE_URL" in st.secrets:
-            url = st.secrets["SUPABASE_URL"]
+        if not url:
+            try:
+                url = st.secrets.get("SUPABASE_URL")
+            except Exception:
+                url = None
 
         key = os.environ.get("SUPABASE_KEY")
-        if not key and hasattr(st, "secrets") and "SUPABASE_KEY" in st.secrets:
-            key = st.secrets["SUPABASE_KEY"]
+        if not key:
+            try:
+                key = st.secrets.get("SUPABASE_KEY")
+            except Exception:
+                key = None
 
         return SupabaseRepository(url=url, key=key)
 
