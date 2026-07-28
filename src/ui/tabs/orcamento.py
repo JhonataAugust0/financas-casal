@@ -125,7 +125,7 @@ def render_orcamento_tab(
                 is_fixed = "Fixa" in str(exp_type)
                 db_type = "FIXED" if is_fixed else "PERIODIC"
                 final_freq = 1 if is_fixed else int(frequency)
-                db_scope = "SHARED" if "O NOSSO" in exp_scope else "PERSONAL"
+                db_scope = "SHARED" if "Nosso" in exp_scope else "PERSONAL"
                 
                 repo.add_expense(user_id, exp_name, db_type, exp_value, final_freq, db_scope)
                 st.success("Despesa adicionada!")

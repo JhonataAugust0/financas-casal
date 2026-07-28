@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import copy
+import math
+from datetime import date, timedelta
 
-from src.domain.models import Expense, Goal, JointSimulationResult
+from src.domain.models import Expense, Goal, GoalContribution, JointSimulationResult, MonthlyRealized
 
 
 class FinancialCalculator:
@@ -115,3 +117,135 @@ class FinancialCalculator:
                 balance -= fill
 
         return allocated
+
+    # ── NEW: Budget Variance Analysis ─────────────────────────────
+
+    def calculate_budget_variance(
+        self, realized_list: list[MonthlyRealized]
+    ) -> dict:
+        """Analyse budget vs actual spending for a given month.
+
+        Returns a dict with:
+        - total_budgeted: sum of all budgeted values
+        - total_actual: sum of all actual values
+        - variance: total_budgeted - total_actual (positive = economy)
+        - variance_pct: variance as percentage of budget
+        - items: list of per-item dicts with name context
+        """
+        if not realized_list:
+            return {
+                "total_budgeted": 0.0,
+                "total_actual": 0.0,
+                "variance": 0.0,
+                "variance_pct": 0.0,
+                "items": [],
+            }
+
+        total_budgeted = sum(r.budgeted_value for r in realized_list)
+        total_actual = sum(r.actual_value for r in realized_list)
+        variance = round(total_budgeted - total_actual, 2)
+        variance_pct = round((variance / total_budgeted) * 100, 2) if total_budgeted > 0 else 0.0
+
+        items = []
+        for r in realized_list:
+            item_var = round(r.budgeted_value - r.actual_value, 2)
+            items.append(
+                {
+                    "expense_id": r.expense_id,
+                    "budgeted": r.budgeted_value,
+                    "actual": r.actual_value,
+                    "variance": item_var,
+                }
+            )
+
+        # Sort by absolute variance descending (biggest deviations first)
+        items.sort(key=lambda x: abs(x["variance"]), reverse=True)
+
+        return {
+            "total_budgeted": round(total_budgeted, 2),
+            "total_actual": round(total_actual, 2),
+            "variance": variance,
+            "variance_pct": variance_pct,
+            "items": items,
+        }
+
+    # ── NEW: Goal Timeline Projection ─────────────────────────────
+
+    def project_goal_timelines(
+        self,
+        goals: list[Goal],
+        avg_monthly_contribution: float,
+    ) -> list[dict]:
+        """Project completion dates for goals using cascade logic and real avg contribution.
+
+        Uses the same priority-ordered cascade as waterfall_allocation:
+        each goal must be fully funded before the next begins receiving funds.
+
+        Returns a list of dicts (one per goal, sorted by priority):
+        - goal_id, goal_name, priority
+        - remaining: amount still needed
+        - estimated_months: months to completion (from today)
+        - estimated_date: projected completion date string 'MM/YYYY'
+        - status: 'CONCLUÍDA' | 'EM ANDAMENTO' | 'SEM APORTE'
+        """
+        if not goals:
+            return []
+
+        sorted_goals = sorted(goals, key=lambda g: g.priority)
+        today = date.today()
+        results = []
+
+        # Accumulate months consumed by higher-priority goals
+        cumulative_months = 0.0
+
+        for goal in sorted_goals:
+            remaining = max(0.0, goal.target_value - goal.current_value)
+
+            if remaining <= 0:
+                results.append(
+                    {
+                        "goal_id": goal.id,
+                        "goal_name": goal.name,
+                        "priority": goal.priority,
+                        "remaining": 0.0,
+                        "estimated_months": 0,
+                        "estimated_date": "—",
+                        "status": "CONCLUÍDA",
+                    }
+                )
+                continue
+
+            if avg_monthly_contribution <= 0:
+                results.append(
+                    {
+                        "goal_id": goal.id,
+                        "goal_name": goal.name,
+                        "priority": goal.priority,
+                        "remaining": round(remaining, 2),
+                        "estimated_months": -1,
+                        "estimated_date": "—",
+                        "status": "SEM APORTE",
+                    }
+                )
+                continue
+
+            months_for_this = remaining / avg_monthly_contribution
+            cumulative_months += months_for_this
+            total_months_ceil = math.ceil(cumulative_months)
+
+            projected_date = today + timedelta(days=total_months_ceil * 30)
+            date_str = projected_date.strftime("%m/%Y")
+
+            results.append(
+                {
+                    "goal_id": goal.id,
+                    "goal_name": goal.name,
+                    "priority": goal.priority,
+                    "remaining": round(remaining, 2),
+                    "estimated_months": total_months_ceil,
+                    "estimated_date": date_str,
+                    "status": "EM ANDAMENTO",
+                }
+            )
+
+        return results

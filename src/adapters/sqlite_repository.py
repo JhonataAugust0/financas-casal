@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import date, timedelta
 
-from src.domain.models import Expense, Goal, User
+from src.domain.models import Expense, Goal, GoalContribution, MonthlyRealized, User
 from src.ports.repository import FinancialRepository
 
 
@@ -15,13 +16,40 @@ class SQLiteRepository(FinancialRepository):
         self._ensure_schema()
 
     def _ensure_schema(self) -> None:
-        """Auto-migrate columns if missing in local SQLite database."""
+        """Auto-migrate columns and tables if missing in local SQLite database."""
         cursor = self._conn.cursor()
+
+        # Migrate expenses.scope column
         cursor.execute("PRAGMA table_info(expenses)")
         columns = [row["name"] for row in cursor.fetchall()]
         if "scope" not in columns:
             cursor.execute("ALTER TABLE expenses ADD COLUMN scope TEXT DEFAULT 'SHARED'")
-            self._conn.commit()
+
+        # Create monthly_realized table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS monthly_realized (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                expense_id INTEGER REFERENCES expenses(id) ON DELETE CASCADE,
+                month_year TEXT NOT NULL,
+                budgeted_value REAL NOT NULL,
+                actual_value REAL NOT NULL,
+                UNIQUE(expense_id, month_year)
+            )
+        """)
+
+        # Create goal_contributions table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS goal_contributions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                goal_id INTEGER REFERENCES goals(id) ON DELETE CASCADE,
+                month_year TEXT NOT NULL,
+                planned_amount REAL DEFAULT 0.0,
+                actual_amount REAL NOT NULL,
+                UNIQUE(goal_id, month_year)
+            )
+        """)
+
+        self._conn.commit()
 
     # ── Users ──────────────────────────────────────────────────────
     def get_user(self, user_id: str) -> User | None:
@@ -197,4 +225,88 @@ class SQLiteRepository(FinancialRepository):
                 "INSERT INTO goals (name, category, subcategory, target_value, current_value, priority, link) VALUES (?, '🛡️ Segurança', ?, ?, 0.0, 1, '')",
                 (item_name, subcategory_name, target_value),
             )
+        self._conn.commit()
+
+    # ── Monthly Realized (Orçado vs. Realizado) ───────────────────
+    def get_monthly_realized(self, month_year: str) -> list[MonthlyRealized]:
+        cursor = self._conn.cursor()
+        cursor.execute(
+            "SELECT * FROM monthly_realized WHERE month_year=?", (month_year,)
+        )
+        return [
+            MonthlyRealized(
+                id=int(row["id"]),
+                expense_id=int(row["expense_id"]),
+                month_year=row["month_year"],
+                budgeted_value=float(row["budgeted_value"]),
+                actual_value=float(row["actual_value"]),
+            )
+            for row in cursor.fetchall()
+        ]
+
+    def upsert_monthly_realized(
+        self, expense_id: int, month_year: str, budgeted: float, actual: float
+    ) -> None:
+        self._conn.execute(
+            """INSERT INTO monthly_realized (expense_id, month_year, budgeted_value, actual_value)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(expense_id, month_year)
+               DO UPDATE SET budgeted_value=excluded.budgeted_value, actual_value=excluded.actual_value""",
+            (expense_id, month_year, budgeted, actual),
+        )
+        self._conn.commit()
+
+    # ── Goal Contributions (Aportes Reais) ────────────────────────
+    def get_goal_contributions(self, goal_id: int) -> list[GoalContribution]:
+        cursor = self._conn.cursor()
+        cursor.execute(
+            "SELECT * FROM goal_contributions WHERE goal_id=? ORDER BY month_year DESC",
+            (goal_id,),
+        )
+        return [
+            GoalContribution(
+                id=int(row["id"]),
+                goal_id=int(row["goal_id"]),
+                month_year=row["month_year"],
+                planned_amount=float(row["planned_amount"]),
+                actual_amount=float(row["actual_amount"]),
+            )
+            for row in cursor.fetchall()
+        ]
+
+    def get_all_contributions(self, months: int = 6) -> list[GoalContribution]:
+        cutoff = (date.today() - timedelta(days=months * 30)).strftime("%Y-%m")
+        cursor = self._conn.cursor()
+        cursor.execute(
+            "SELECT * FROM goal_contributions WHERE month_year >= ? ORDER BY month_year DESC",
+            (cutoff,),
+        )
+        return [
+            GoalContribution(
+                id=int(row["id"]),
+                goal_id=int(row["goal_id"]),
+                month_year=row["month_year"],
+                planned_amount=float(row["planned_amount"]),
+                actual_amount=float(row["actual_amount"]),
+            )
+            for row in cursor.fetchall()
+        ]
+
+    def add_goal_contribution(
+        self, goal_id: int, month_year: str, planned: float, actual: float
+    ) -> None:
+        self._conn.execute(
+            """INSERT INTO goal_contributions (goal_id, month_year, planned_amount, actual_amount)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(goal_id, month_year)
+               DO UPDATE SET planned_amount=planned_amount + excluded.planned_amount,
+                             actual_amount=actual_amount + excluded.actual_amount""",
+            (goal_id, month_year, planned, actual),
+        )
+        self._conn.commit()
+
+    def delete_goal_contribution(self, contribution_id: int) -> None:
+        self._conn.execute(
+            "DELETE FROM goal_contributions WHERE id=?", (contribution_id,)
+        )
         self._conn.commit()

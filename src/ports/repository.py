@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from src.domain.models import Expense, Goal, User
+from src.domain.models import Expense, Goal, GoalContribution, MonthlyRealized, User
 
 
 class FinancialRepository(ABC):
@@ -103,4 +103,40 @@ class FinancialRepository(ABC):
         to reflect 'Manutenção' mode; otherwise 'Sobrevivência'.
         Priority is always forced to 1.
         """
+        ...
+
+    # ── Monthly Realized (Orçado vs. Realizado) ───────────────────
+    @abstractmethod
+    def get_monthly_realized(self, month_year: str) -> list[MonthlyRealized]:
+        """Get all realized expense records for a given month ('YYYY-MM')."""
+        ...
+
+    @abstractmethod
+    def upsert_monthly_realized(
+        self, expense_id: int, month_year: str, budgeted: float, actual: float
+    ) -> None:
+        """Insert or update a realized expense record for a given month."""
+        ...
+
+    # ── Goal Contributions (Aportes Reais) ────────────────────────
+    @abstractmethod
+    def get_goal_contributions(self, goal_id: int) -> list[GoalContribution]:
+        """Get all contribution records for a specific goal."""
+        ...
+
+    @abstractmethod
+    def get_all_contributions(self, months: int = 6) -> list[GoalContribution]:
+        """Get contribution records across all goals for the last N months."""
+        ...
+
+    @abstractmethod
+    def add_goal_contribution(
+        self, goal_id: int, month_year: str, planned: float, actual: float
+    ) -> None:
+        """Record a contribution (planned vs actual) for a goal in a month."""
+        ...
+
+    @abstractmethod
+    def delete_goal_contribution(self, contribution_id: int) -> None:
+        """Delete a specific contribution record."""
         ...

@@ -75,7 +75,7 @@ def _render_partner_summary(
 
             if personal_items:
                 if shared_items: st.markdown("---")
-                st.markdown("#### 👤 O Meu / O Seu")
+                st.markdown("#### 👤 O Meu")
                 for exp in personal_items:
                     _render_expense_row(repo, exp)
         else:
@@ -91,7 +91,7 @@ def _render_partner_summary(
                     "Quem Paga?",
                     [
                         "🏠 O Nosso (Bolo Central)",
-                        "👤 O Meu / O Seu (Mesada Individual)",
+                        "👤 O Meu (Mesada Individual)",
                     ],
                     key=f"aes_{user.id}",
                 )
@@ -138,7 +138,7 @@ def _render_expense_row(repo: FinancialRepository, exp: Expense) -> None:
                     "Quem Paga?",
                     [
                         "🏠 O Nosso (Bolo Central)",
-                        "👤 O Meu / O Seu (Mesada Individual)",
+                        "👤 O Meu (Mesada Individual)",
                     ],
                     index=0 if exp.scope == "SHARED" else 1,
                     key=f"exs_{exp.id}",

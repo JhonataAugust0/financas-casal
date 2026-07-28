@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import os
+from datetime import date, timedelta
 
 from supabase import Client, create_client
 
-from src.domain.models import Expense, Goal, User
+from src.domain.models import Expense, Goal, GoalContribution, MonthlyRealized, User
 from src.ports.repository import FinancialRepository
 
 
@@ -55,6 +56,24 @@ class SupabaseRepository(FinancialRepository):
             current_value=float(row.get("current_value", 0.0)),
             priority=int(row["priority"]),
             link=row.get("link") or "",
+        )
+
+    def _row_to_monthly_realized(self, row: dict) -> MonthlyRealized:
+        return MonthlyRealized(
+            id=int(row["id"]),
+            expense_id=int(row["expense_id"]),
+            month_year=row["month_year"],
+            budgeted_value=float(row["budgeted_value"]),
+            actual_value=float(row["actual_value"]),
+        )
+
+    def _row_to_goal_contribution(self, row: dict) -> GoalContribution:
+        return GoalContribution(
+            id=int(row["id"]),
+            goal_id=int(row["goal_id"]),
+            month_year=row["month_year"],
+            planned_amount=float(row.get("planned_amount", 0.0)),
+            actual_amount=float(row["actual_amount"]),
         )
 
     # ── Users ──────────────────────────────────────────────────────
@@ -235,3 +254,86 @@ class SupabaseRepository(FinancialRepository):
                     "link": "",
                 }
             ).execute()
+
+    # ── Monthly Realized (Orçado vs. Realizado) ───────────────────
+    def get_monthly_realized(self, month_year: str) -> list[MonthlyRealized]:
+        response = (
+            self._client.table("monthly_realized")
+            .select("*")
+            .eq("month_year", month_year)
+            .execute()
+        )
+        data = response.data if (response and response.data) else []
+        return [self._row_to_monthly_realized(r) for r in data]
+
+    def upsert_monthly_realized(
+        self, expense_id: int, month_year: str, budgeted: float, actual: float
+    ) -> None:
+        self._client.table("monthly_realized").upsert(
+            {
+                "expense_id": expense_id,
+                "month_year": month_year,
+                "budgeted_value": budgeted,
+                "actual_value": actual,
+            },
+            on_conflict="expense_id,month_year",
+        ).execute()
+
+    # ── Goal Contributions (Aportes Reais) ────────────────────────
+    def get_goal_contributions(self, goal_id: int) -> list[GoalContribution]:
+        response = (
+            self._client.table("goal_contributions")
+            .select("*")
+            .eq("goal_id", goal_id)
+            .order("month_year", desc=True)
+            .execute()
+        )
+        data = response.data if (response and response.data) else []
+        return [self._row_to_goal_contribution(r) for r in data]
+
+    def get_all_contributions(self, months: int = 6) -> list[GoalContribution]:
+        cutoff = (date.today() - timedelta(days=months * 30)).strftime("%Y-%m")
+        response = (
+            self._client.table("goal_contributions")
+            .select("*")
+            .gte("month_year", cutoff)
+            .order("month_year", desc=True)
+            .execute()
+        )
+        data = response.data if (response and response.data) else []
+        return [self._row_to_goal_contribution(r) for r in data]
+
+    def add_goal_contribution(
+        self, goal_id: int, month_year: str, planned: float, actual: float
+    ) -> None:
+        # Try to find existing record for this goal+month
+        response = (
+            self._client.table("goal_contributions")
+            .select("id,planned_amount,actual_amount")
+            .eq("goal_id", goal_id)
+            .eq("month_year", month_year)
+            .limit(1)
+            .execute()
+        )
+        if response and response.data and len(response.data) > 0:
+            existing = response.data[0]
+            self._client.table("goal_contributions").update(
+                {
+                    "planned_amount": float(existing["planned_amount"]) + planned,
+                    "actual_amount": float(existing["actual_amount"]) + actual,
+                }
+            ).eq("id", existing["id"]).execute()
+        else:
+            self._client.table("goal_contributions").insert(
+                {
+                    "goal_id": goal_id,
+                    "month_year": month_year,
+                    "planned_amount": planned,
+                    "actual_amount": actual,
+                }
+            ).execute()
+
+    def delete_goal_contribution(self, contribution_id: int) -> None:
+        self._client.table("goal_contributions").delete().eq(
+            "id", contribution_id
+        ).execute()

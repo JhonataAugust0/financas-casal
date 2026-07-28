@@ -20,6 +20,7 @@ from src.domain.financial_calculator import FinancialCalculator
 from src.domain.models import Expense
 from src.ports.repository import FinancialRepository
 from src.ui.styles import inject_custom_css
+from src.ui.tabs.fechamento import render_fechamento_tab
 from src.ui.tabs.metas import render_metas_tab
 from src.ui.tabs.orcamento import render_orcamento_tab
 from src.ui.tabs.resumo import render_resumo_tab
@@ -80,8 +81,14 @@ def main() -> None:
 
     st.title("🌱 Nossa Vida Financeira")
 
-    tab_resumo, tab_orcamento, tab_metas, tab_simulador = st.tabs(
-        ["📊 Resumo", " Orçamento", " Metas", " Modelos de Gestão de Renda"]
+    tab_resumo, tab_orcamento, tab_metas, tab_fechamento, tab_simulador = st.tabs(
+        [
+            "📊 Resumo",
+            "Orçamento",
+            "Metas",
+            "Fechamento",
+            "Modelos de Gestão de Renda",
+        ]
     )
 
     # ── Shared data (fetched once) ──
@@ -102,6 +109,9 @@ def main() -> None:
 
     with tab_orcamento:
         render_orcamento_tab(repo, user_a, user_b)
+
+    with tab_fechamento:
+        render_fechamento_tab(repo, calc, user_a, user_b, expenses_a, expenses_b)
 
     with tab_metas:
         render_metas_tab(repo, calc, user_a, user_b, cost_a, cost_b)

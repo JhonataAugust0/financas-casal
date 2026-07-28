@@ -1,8 +1,9 @@
-"""Tab: 🎯 Metas — goals, cascade allocation, and safety reserve management."""
+"""Tab: 🎯 Metas — goals, cascade allocation, safety reserve, and timeline projection."""
 
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import date
 
 import streamlit as st
 
@@ -35,12 +36,65 @@ def _sync_safety_reserve(
     repo.sync_reserva_paz(target, is_maintenance)
 
 
+def _get_avg_monthly_contribution(repo: FinancialRepository) -> float:
+    """Calculate the average monthly contribution from real history."""
+    contributions = repo.get_all_contributions(months=6)
+    if not contributions:
+        return 0.0
+
+    # Aggregate by month
+    monthly_totals: dict[str, float] = {}
+    for c in contributions:
+        monthly_totals[c.month_year] = monthly_totals.get(c.month_year, 0.0) + c.actual_amount
+
+    if not monthly_totals:
+        return 0.0
+
+    return sum(monthly_totals.values()) / len(monthly_totals)
+
+
+def _render_timeline_badge(
+    timeline_info: dict | None,
+) -> None:
+    """Render a timeline projection badge for a goal."""
+    if timeline_info is None:
+        return
+
+    status = timeline_info["status"]
+    if status == "CONCLUÍDA":
+        st.markdown(
+            "<span style='background-color: #D5E4D4; color: #446943; "
+            "padding: 3px 8px; border-radius: 6px; font-size: 0.75rem;'>"
+            "✅ Meta Concluída!</span>",
+            unsafe_allow_html=True,
+        )
+    elif status == "SEM APORTE":
+        st.markdown(
+            "<span style='background-color: #F5D5D5; color: #8B3A3A; "
+            "padding: 3px 8px; border-radius: 6px; font-size: 0.75rem;'>"
+            "⚠️ Sem aportes registrados</span>",
+            unsafe_allow_html=True,
+        )
+    else:
+        months = timeline_info["estimated_months"]
+        est_date = timeline_info["estimated_date"]
+        remaining = timeline_info["remaining"]
+        st.markdown(
+            f"<span style='background-color: #E8DFF5; color: #5C4A7A; "
+            f"padding: 3px 8px; border-radius: 6px; font-size: 0.75rem;'>"
+            f"📅 Previsão: **{est_date}** (~{months} meses · "
+            f"R$ {remaining:.2f} restantes)</span>",
+            unsafe_allow_html=True,
+        )
+
+
 def _render_goal_item(
     repo: FinancialRepository,
     goal: Goal,
     is_safety: bool,
+    timeline_map: dict[int, dict] | None = None,
 ) -> None:
-    """Render a single goal item with progress bar and optional edit controls."""
+    """Render a single goal item with progress bar, timeline badge, and optional edit controls."""
     progress = (
         goal.current_value / goal.target_value if goal.target_value > 0 else 0
     )
@@ -65,6 +119,10 @@ def _render_goal_item(
             f"R$ {goal.current_value:.2f} / R$ {goal.target_value:.2f}</p>",
             unsafe_allow_html=True,
         )
+
+        # Timeline projection badge
+        if timeline_map and goal.id in timeline_map:
+            _render_timeline_badge(timeline_map[goal.id])
 
     # Lock 2: Protect safety items from edits
     if not is_safety:
@@ -108,6 +166,7 @@ def _render_subcategory(
     subcategory: str,
     goals: list[Goal],
     is_safety: bool,
+    timeline_map: dict[int, dict] | None = None,
 ) -> None:
     """Render a subcategory header, its goals, and management controls."""
     sub_target = sum(g.target_value for g in goals)
@@ -137,7 +196,7 @@ def _render_subcategory(
 
     sorted_goals = sorted(goals, key=lambda g: g.priority)
     for goal in sorted_goals:
-        _render_goal_item(repo, goal, is_safety)
+        _render_goal_item(repo, goal, is_safety, timeline_map)
 
     # Lock 3: Prevent adding new items to safety subcategories
     if not is_safety:
@@ -184,6 +243,7 @@ def _render_category_card(
     repo: FinancialRepository,
     category: str,
     goals: list[Goal],
+    timeline_map: dict[int, dict] | None = None,
 ) -> None:
     """Render a full category expander card with subcategories."""
     is_safety = category == _SAFETY_CATEGORY
@@ -227,7 +287,7 @@ def _render_category_card(
             subcategories[goal.subcategory or "Geral"].append(goal)
 
         for subcat, sub_goals in subcategories.items():
-            _render_subcategory(repo, category, subcat, sub_goals, is_safety)
+            _render_subcategory(repo, category, subcat, sub_goals, is_safety, timeline_map)
 
         # Lock 4: Prevent creating new subcategories in safety card
         if not is_safety:
@@ -319,22 +379,58 @@ def render_metas_tab(
     # 1. Synchronise safety reserve
     _sync_safety_reserve(repo, calc, user_a, user_b, cost_a, cost_b)
 
-    # 2. Fetch and render
+    # 2. Fetch goals
     goals = repo.get_goals()
 
+    # 3. Calculate timeline projections
+    avg_contribution = _get_avg_monthly_contribution(repo)
+    timeline_map: dict[int, dict] = {}
+
+    if goals and avg_contribution > 0:
+        timelines = calc.project_goal_timelines(goals, avg_contribution)
+        for t in timelines:
+            timeline_map[t["goal_id"]] = t
+
+    # 4. Aporte form
     if goals:
         st.write("")
+
+        # Show average contribution rate info
+        if avg_contribution > 0:
+            st.info(
+                f"📈 Ritmo médio de aporte real: **R\\$ {avg_contribution:.2f}/mês** "
+                f"(baseado no histórico). As previsões de data usam este valor."
+            )
+        else:
+            st.info(
+                "📈 Ainda não há histórico de aportes. "
+                "Faça o primeiro aporte para ativar as previsões de data de conclusão."
+            )
+
         amount = st.number_input(
             "Valor do Aporte Conjunto (R$)", min_value=0.0, step=50.0
         )
         if st.button("Inserir Aporte 🚀"):
+            # Run cascade allocation
+            old_values = {g.id: g.current_value for g in goals}
             updated = calc.waterfall_allocation(goals, amount)
             repo.update_goals(updated)
-            st.success(f"R$ {amount} distribuídos conforme a prioridade!")
+
+            # Record contributions per goal
+            current_month = date.today().strftime("%Y-%m")
+            for goal in updated:
+                actual_fill = goal.current_value - old_values.get(goal.id, goal.current_value)
+                if actual_fill > 0:
+                    # planned = what cascade computed, actual = same (user confirmed the amount)
+                    repo.add_goal_contribution(
+                        goal.id, current_month, actual_fill, actual_fill
+                    )
+
+            st.success(f"R\\$ {amount:.2f} distribuídos conforme a prioridade!")
             st.rerun()
 
         st.divider()
-        st.markdown("### 📋 Painel de Metas")
+        st.markdown("### Painel de Metas")
 
         # Build ordered category list (safety first)
         categories_map: dict[str, list[Goal]] = defaultdict(list)
@@ -347,7 +443,7 @@ def render_metas_tab(
             ordered_categories.insert(0, _SAFETY_CATEGORY)
 
         for category in ordered_categories:
-            _render_category_card(repo, category, categories_map[category])
+            _render_category_card(repo, category, categories_map[category], timeline_map)
 
     # Global creation form (always visible)
     st.write("")

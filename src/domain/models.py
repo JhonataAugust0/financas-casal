@@ -44,3 +44,25 @@ class JointSimulationResult:
     allowance_separated: float
     allowance_joint: float
     deficit_rescued: float  # The hidden benefit of joining finances
+
+
+@dataclass
+class MonthlyRealized:
+    """Actual spending for a budgeted expense in a specific month."""
+
+    id: int
+    expense_id: int       # FK → Expense
+    month_year: str       # 'YYYY-MM'
+    budgeted_value: float  # Budget snapshot at time of recording
+    actual_value: float   # What was actually paid
+
+
+@dataclass
+class GoalContribution:
+    """Record of actual contribution towards a goal in a specific month."""
+
+    id: int
+    goal_id: int          # FK → Goal
+    month_year: str       # 'YYYY-MM'
+    planned_amount: float  # What the cascade suggested
+    actual_amount: float  # What was actually contributed
