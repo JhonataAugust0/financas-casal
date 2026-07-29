@@ -66,3 +66,14 @@ class GoalContribution:
     month_year: str       # 'YYYY-MM'
     planned_amount: float  # What the cascade suggested
     actual_amount: float  # What was actually contributed
+
+
+@dataclass
+class MonthlySnapshot:
+    """Historical snapshot of total couple wealth/savings for a specific month."""
+
+    id: int
+    month_year: str        # 'YYYY-MM'
+    reserve_value: float   # Current value of Reserva de Paz
+    goals_value: float     # Sum of current_value across all non-reserve goals
+    total_wealth: float    # Total wealth accumulated (reserve + goals)

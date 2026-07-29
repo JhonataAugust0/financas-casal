@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from src.domain.models import Expense, Goal, GoalContribution, MonthlyRealized, User
+from src.domain.models import Expense, Goal, GoalContribution, MonthlyRealized, MonthlySnapshot, User
 
 
 class FinancialRepository(ABC):
@@ -139,4 +139,17 @@ class FinancialRepository(ABC):
     @abstractmethod
     def delete_goal_contribution(self, contribution_id: int) -> None:
         """Delete a specific contribution record."""
+        ...
+
+    # ── Monthly Snapshots (Evolução Patrimonial) ──────────────────
+    @abstractmethod
+    def save_monthly_snapshot(
+        self, month_year: str, reserve_value: float, goals_value: float
+    ) -> None:
+        """Upsert historical wealth snapshot for a given month ('YYYY-MM')."""
+        ...
+
+    @abstractmethod
+    def get_wealth_snapshots(self, months: int = 12) -> list[MonthlySnapshot]:
+        """Get historical wealth snapshots for the last N months."""
         ...

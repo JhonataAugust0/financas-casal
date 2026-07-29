@@ -123,15 +123,7 @@ class FinancialCalculator:
     def calculate_budget_variance(
         self, realized_list: list[MonthlyRealized]
     ) -> dict:
-        """Analyse budget vs actual spending for a given month.
-
-        Returns a dict with:
-        - total_budgeted: sum of all budgeted values
-        - total_actual: sum of all actual values
-        - variance: total_budgeted - total_actual (positive = economy)
-        - variance_pct: variance as percentage of budget
-        - items: list of per-item dicts with name context
-        """
+        """Analyse budget vs actual spending for a given month."""
         if not realized_list:
             return {
                 "total_budgeted": 0.0,
@@ -158,7 +150,6 @@ class FinancialCalculator:
                 }
             )
 
-        # Sort by absolute variance descending (biggest deviations first)
         items.sort(key=lambda x: abs(x["variance"]), reverse=True)
 
         return {
@@ -176,18 +167,7 @@ class FinancialCalculator:
         goals: list[Goal],
         avg_monthly_contribution: float,
     ) -> list[dict]:
-        """Project completion dates for goals using cascade logic and real avg contribution.
-
-        Uses the same priority-ordered cascade as waterfall_allocation:
-        each goal must be fully funded before the next begins receiving funds.
-
-        Returns a list of dicts (one per goal, sorted by priority):
-        - goal_id, goal_name, priority
-        - remaining: amount still needed
-        - estimated_months: months to completion (from today)
-        - estimated_date: projected completion date string 'MM/YYYY'
-        - status: 'CONCLUÍDA' | 'EM ANDAMENTO' | 'SEM APORTE'
-        """
+        """Project completion dates for goals using cascade logic and real avg contribution."""
         if not goals:
             return []
 
@@ -195,7 +175,6 @@ class FinancialCalculator:
         today = date.today()
         results = []
 
-        # Accumulate months consumed by higher-priority goals
         cumulative_months = 0.0
 
         for goal in sorted_goals:
@@ -249,3 +228,37 @@ class FinancialCalculator:
             )
 
         return results
+
+    # ── NEW: Couple Impact Metrics ────────────────────────────────
+
+    def calculate_couple_impact_metrics(
+        self,
+        goals: list[Goal],
+        contributions: list[GoalContribution],
+        deficit_rescued: float = 0.0,
+    ) -> dict:
+        """Calculate couple impact metrics:
+        - reserve_current & reserve_target (% of safety reserve built)
+        - goals_completion_pct (total accumulated % of all goals)
+        - total_joint_benefit (hidden deficit rescued + accumulated savings)
+        """
+        safety_goals = [g for g in goals if g.priority == 1 or g.category == "🛡️ Segurança"]
+        reserve_current = sum(g.current_value for g in safety_goals)
+        reserve_target = sum(g.target_value for g in safety_goals)
+        reserve_pct = round((reserve_current / reserve_target * 100), 1) if reserve_target > 0 else 0.0
+
+        total_target = sum(g.target_value for g in goals)
+        total_current = sum(g.current_value for g in goals)
+        goals_pct = round((total_current / total_target * 100), 1) if total_target > 0 else 0.0
+
+        total_contributions = sum(c.actual_amount for c in contributions)
+
+        return {
+            "reserve_current": round(reserve_current, 2),
+            "reserve_target": round(reserve_target, 2),
+            "reserve_pct": reserve_pct,
+            "goals_pct": goals_pct,
+            "total_contributions": round(total_contributions, 2),
+            "total_current_wealth": round(total_current, 2),
+            "joint_benefit": round(deficit_rescued, 2),
+        }

@@ -1,4 +1,4 @@
-"""Tab: 🎯 Metas — goals, cascade allocation, safety reserve, and timeline projection."""
+"""Tab: 🎯 Metas — goals, cascade allocation, timeline projection, contribution history, and wealth evolution."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import streamlit as st
 from src.domain.financial_calculator import FinancialCalculator
 from src.domain.models import Goal, User
 from src.ports.repository import FinancialRepository
+from src.ui.components.charts import build_wealth_evolution_chart
 
 _SAFETY_CATEGORY = "🛡️ Segurança"
 
@@ -42,7 +43,6 @@ def _get_avg_monthly_contribution(repo: FinancialRepository) -> float:
     if not contributions:
         return 0.0
 
-    # Aggregate by month
     monthly_totals: dict[str, float] = {}
     for c in contributions:
         monthly_totals[c.month_year] = monthly_totals.get(c.month_year, 0.0) + c.actual_amount
@@ -64,14 +64,14 @@ def _render_timeline_badge(
     if status == "CONCLUÍDA":
         st.markdown(
             "<span style='background-color: #D5E4D4; color: #446943; "
-            "padding: 3px 8px; border-radius: 6px; font-size: 0.75rem;'>"
+            "padding: 3px 8px; border-radius: 6px; font-size: 0.75rem; display: inline-block; margin-top: 4px;'>"
             "✅ Meta Concluída!</span>",
             unsafe_allow_html=True,
         )
     elif status == "SEM APORTE":
         st.markdown(
             "<span style='background-color: #F5D5D5; color: #8B3A3A; "
-            "padding: 3px 8px; border-radius: 6px; font-size: 0.75rem;'>"
+            "padding: 3px 8px; border-radius: 6px; font-size: 0.75rem; display: inline-block; margin-top: 4px;'>"
             "⚠️ Sem aportes registrados</span>",
             unsafe_allow_html=True,
         )
@@ -81,9 +81,8 @@ def _render_timeline_badge(
         remaining = timeline_info["remaining"]
         st.markdown(
             f"<span style='background-color: #E8DFF5; color: #5C4A7A; "
-            f"padding: 3px 8px; border-radius: 6px; font-size: 0.75rem;'>"
-            f"📅 Previsão: **{est_date}** (~{months} meses · "
-            f"R$ {remaining:.2f} restantes)</span>",
+            f"padding: 4px 10px; border-radius: 6px; font-size: 0.78rem; display: inline-block; margin-top: 4px;'>"
+            f"📅 Previsão: **{est_date}** (~{months}m · R$ {remaining:.2f} faltam)</span>",
             unsafe_allow_html=True,
         )
 
@@ -99,7 +98,7 @@ def _render_goal_item(
         goal.current_value / goal.target_value if goal.target_value > 0 else 0
     )
 
-    col_item, col_edit = st.columns([0.9, 0.1])
+    col_item, col_edit = st.columns([0.85, 0.15])
     with col_item:
         link_html = (
             f" <a href='{goal.link}' target='_blank'>🔗</a>"
@@ -107,24 +106,17 @@ def _render_goal_item(
             else ""
         )
         st.markdown(
-            f"<span style='font-size: 0.9rem;'>"
-            f"**{goal.name}** (Prio {goal.priority}){link_html}"
-            f"</span>",
+            f"<div style='display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px;'>"
+            f"<span style='font-size: 0.9rem;'>**{goal.name}** (Prio {goal.priority}){link_html}</span>"
+            f"<span style='font-size: 0.8rem; color: #888; white-space: nowrap;'>R$ {goal.current_value:.2f} / R$ {goal.target_value:.2f}</span>"
+            f"</div>",
             unsafe_allow_html=True,
         )
         st.progress(min(progress, 1.0))
-        st.markdown(
-            f"<p style='text-align: right; font-size: 0.8rem; "
-            f"color: #888; margin-top: -10px;'>"
-            f"R$ {goal.current_value:.2f} / R$ {goal.target_value:.2f}</p>",
-            unsafe_allow_html=True,
-        )
 
-        # Timeline projection badge
         if timeline_map and goal.id in timeline_map:
             _render_timeline_badge(timeline_map[goal.id])
 
-    # Lock 2: Protect safety items from edits
     if not is_safety:
         with col_edit:
             with st.popover("⚙️"):
@@ -174,20 +166,19 @@ def _render_subcategory(
 
     st.markdown(
         f"<div style='display: flex; justify-content: space-between; "
-        f"align-items: center; margin-top: 24px; margin-bottom: 8px; "
+        f"align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin-top: 20px; margin-bottom: 8px; "
         f"border-bottom: 1px solid #EAE0D5; padding-bottom: 4px;'>"
         f"<h4 style='color: #5C4A4D; font-size: 1.05rem; margin: 0;'>"
         f"📁 {subcategory}</h4>"
-        f"<span style='font-size: 0.85rem; color: #7A6C68;'>"
+        f"<span style='font-size: 0.85rem; color: #7A6C68; white-space: nowrap;'>"
         f"R$ {sub_current:.2f} / R$ {sub_target:.2f}</span></div>",
         unsafe_allow_html=True,
     )
 
-    # Lock 1: Protect safety subcategory from deletion
     if not is_safety:
-        _col_spacer, col_delete = st.columns([0.8, 0.2])
+        _col_spacer, col_delete = st.columns([0.7, 0.3])
         with col_delete:
-            with st.popover("🗑️", use_container_width=True):
+            with st.popover("🗑️ Excluir Subcategoria", use_container_width=True):
                 if st.button(
                     "Confirmar Exclusão", key=f"dels_{category}_{subcategory}"
                 ):
@@ -198,7 +189,6 @@ def _render_subcategory(
     for goal in sorted_goals:
         _render_goal_item(repo, goal, is_safety, timeline_map)
 
-    # Lock 3: Prevent adding new items to safety subcategories
     if not is_safety:
         st.write("")
         with st.popover(
@@ -252,7 +242,6 @@ def _render_category_card(
     cat_progress = cat_current / cat_target if cat_target > 0 else 0
 
     with st.expander(f"📄 {category}", expanded=is_safety):
-        # Maintenance toggle — ONLY inside safety card
         if is_safety:
             st.toggle(
                 "Modo Manutenção na Reserva (Inclui a Mesada)",
@@ -264,7 +253,7 @@ def _render_category_card(
             )
 
         st.markdown(
-            f"<div style='display: flex; gap: 8px; margin-bottom: 16px;'>"
+            f"<div style='display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;'>"
             f"<span style='background-color: #D3E0EA; color: #3A5A78; "
             f"padding: 4px 10px; border-radius: 6px; font-size: 0.8rem;'>"
             f"{len(goals)} Itens</span>"
@@ -276,12 +265,11 @@ def _render_category_card(
         st.progress(min(cat_progress, 1.0))
         st.markdown(
             f"<p style='text-align: right; font-size: 0.85rem; "
-            f"color: #7A6C68; margin-top: -10px;'>"
+            f"color: #7A6C68; margin-top: -10px; white-space: nowrap;'>"
             f"Total: R$ {cat_current:.2f} / R$ {cat_target:.2f}</p>",
             unsafe_allow_html=True,
         )
 
-        # Group goals by subcategory
         subcategories: dict[str, list[Goal]] = defaultdict(list)
         for goal in goals:
             subcategories[goal.subcategory or "Geral"].append(goal)
@@ -289,7 +277,6 @@ def _render_category_card(
         for subcat, sub_goals in subcategories.items():
             _render_subcategory(repo, category, subcat, sub_goals, is_safety, timeline_map)
 
-        # Lock 4: Prevent creating new subcategories in safety card
         if not is_safety:
             st.write("")
             with st.popover(
@@ -365,6 +352,87 @@ def _render_global_creation_form(repo: FinancialRepository, has_goals: bool) -> 
                     st.rerun()
 
 
+def _render_wealth_evolution_section(repo: FinancialRepository) -> None:
+    """Section: Visual historical wealth evolution chart inside Metas tab."""
+    snapshots = repo.get_wealth_snapshots(months=12)
+    st.markdown("---")
+    st.markdown("### Evolução Patrimonial do Casal")
+    st.caption("Curva de crescimento acumulado da Reserva de Paz e das Metas ao longo dos meses.")
+
+    chart = build_wealth_evolution_chart(snapshots)
+    st.altair_chart(chart, use_container_width=True, theme=None)
+
+
+def _render_contribution_history(
+    repo: FinancialRepository,
+) -> None:
+    """Section: Goal contribution history and average contribution rate."""
+    st.markdown("---")
+    st.markdown("### Histórico de Aportes em Metas")
+    st.caption(
+        "Acompanhe o quanto foi **realmente aportado** a cada mês nas metas do casal, "
+        "comparado com o planejado pela Cascata."
+    )
+
+    contributions = repo.get_all_contributions(months=12)
+
+    if not contributions:
+        st.info(
+            "Nenhum aporte registrado ainda. "
+            "Faça aportes no formulário acima para começar a gerar histórico."
+        )
+        return
+
+    goals = repo.get_goals()
+    goal_name_map = {g.id: g.name for g in goals}
+
+    monthly_totals: dict[str, dict[str, float]] = {}
+    for c in contributions:
+        if c.month_year not in monthly_totals:
+            monthly_totals[c.month_year] = {"planned": 0.0, "actual": 0.0}
+        monthly_totals[c.month_year]["planned"] += c.planned_amount
+        monthly_totals[c.month_year]["actual"] += c.actual_amount
+
+    sorted_months = sorted(monthly_totals.keys(), reverse=True)
+
+    for month in sorted_months:
+        totals = monthly_totals[month]
+        with st.expander(f"📅 Aportes de {month}", expanded=(month == sorted_months[0])):
+            cm1, cm2, cm3 = st.columns(3)
+            with cm1:
+                st.metric("Planejado (Cascata)", f"R$ {totals['planned']:.2f}")
+            with cm2:
+                st.metric("Aportado (Real)", f"R$ {totals['actual']:.2f}")
+            with cm3:
+                diff = totals["actual"] - totals["planned"]
+                st.metric(
+                    "Diferença",
+                    f"R$ {abs(diff):.2f}",
+                    delta=f"{'acima' if diff >= 0 else 'abaixo'} do planejado",
+                    delta_color="normal" if diff >= 0 else "inverse",
+                )
+
+            month_contribs = [c for c in contributions if c.month_year == month]
+            for c in month_contribs:
+                gname = goal_name_map.get(c.goal_id, f"Meta #{c.goal_id}")
+                st.markdown(
+                    f"  • **{gname}**: Planejado R\\$ {c.planned_amount:.2f} → "
+                    f"Real R\\$ {c.actual_amount:.2f}"
+                )
+
+    if monthly_totals:
+        avg_actual = sum(t["actual"] for t in monthly_totals.values()) / len(monthly_totals)
+        num_months = len(monthly_totals)
+        st.markdown("---")
+        st.metric(
+            f"🎯 Média de Aporte Real Mensal (últimos {num_months} meses)",
+            f"R$ {avg_actual:.2f}",
+        )
+        st.caption(
+            "Esta média é usada acima para projetar as datas de conclusão dos objetivos."
+        )
+
+
 def render_metas_tab(
     repo: FinancialRepository,
     calc: FinancialCalculator,
@@ -374,15 +442,12 @@ def render_metas_tab(
     cost_b: float,
 ) -> None:
     """Render the complete 🎯 Metas tab."""
-    st.subheader("Aportes")
+    st.subheader("Metas e Aportes")
 
-    # 1. Synchronise safety reserve
     _sync_safety_reserve(repo, calc, user_a, user_b, cost_a, cost_b)
 
-    # 2. Fetch goals
     goals = repo.get_goals()
 
-    # 3. Calculate timeline projections
     avg_contribution = _get_avg_monthly_contribution(repo)
     timeline_map: dict[int, dict] = {}
 
@@ -391,11 +456,9 @@ def render_metas_tab(
         for t in timelines:
             timeline_map[t["goal_id"]] = t
 
-    # 4. Aporte form
     if goals:
         st.write("")
 
-        # Show average contribution rate info
         if avg_contribution > 0:
             st.info(
                 f"📈 Ritmo médio de aporte real: **R\\$ {avg_contribution:.2f}/mês** "
@@ -410,18 +473,15 @@ def render_metas_tab(
         amount = st.number_input(
             "Valor do Aporte Conjunto (R$)", min_value=0.0, step=50.0
         )
-        if st.button("Inserir Aporte 🚀"):
-            # Run cascade allocation
+        if st.button("Inserir Aporte 🚀", use_container_width=True):
             old_values = {g.id: g.current_value for g in goals}
             updated = calc.waterfall_allocation(goals, amount)
             repo.update_goals(updated)
 
-            # Record contributions per goal
             current_month = date.today().strftime("%Y-%m")
             for goal in updated:
                 actual_fill = goal.current_value - old_values.get(goal.id, goal.current_value)
                 if actual_fill > 0:
-                    # planned = what cascade computed, actual = same (user confirmed the amount)
                     repo.add_goal_contribution(
                         goal.id, current_month, actual_fill, actual_fill
                     )
@@ -432,7 +492,6 @@ def render_metas_tab(
         st.divider()
         st.markdown("### Painel de Metas")
 
-        # Build ordered category list (safety first)
         categories_map: dict[str, list[Goal]] = defaultdict(list)
         for goal in goals:
             categories_map[goal.category].append(goal)
@@ -445,6 +504,9 @@ def render_metas_tab(
         for category in ordered_categories:
             _render_category_card(repo, category, categories_map[category], timeline_map)
 
-    # Global creation form (always visible)
     st.write("")
     _render_global_creation_form(repo, bool(goals))
+
+    # ── History & Wealth Evolution inside Metas tab ──
+    _render_wealth_evolution_section(repo)
+    _render_contribution_history(repo)

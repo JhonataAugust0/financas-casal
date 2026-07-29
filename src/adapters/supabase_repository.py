@@ -5,7 +5,7 @@ from datetime import date, timedelta
 
 from supabase import Client, create_client
 
-from src.domain.models import Expense, Goal, GoalContribution, MonthlyRealized, User
+from src.domain.models import Expense, Goal, GoalContribution, MonthlyRealized, MonthlySnapshot, User
 from src.ports.repository import FinancialRepository
 
 
@@ -74,6 +74,15 @@ class SupabaseRepository(FinancialRepository):
             month_year=row["month_year"],
             planned_amount=float(row.get("planned_amount", 0.0)),
             actual_amount=float(row["actual_amount"]),
+        )
+
+    def _row_to_monthly_snapshot(self, row: dict) -> MonthlySnapshot:
+        return MonthlySnapshot(
+            id=int(row["id"]),
+            month_year=row["month_year"],
+            reserve_value=float(row.get("reserve_value", 0.0)),
+            goals_value=float(row.get("goals_value", 0.0)),
+            total_wealth=float(row.get("total_wealth", 0.0)),
         )
 
     # ── Users ──────────────────────────────────────────────────────
@@ -306,7 +315,6 @@ class SupabaseRepository(FinancialRepository):
     def add_goal_contribution(
         self, goal_id: int, month_year: str, planned: float, actual: float
     ) -> None:
-        # Try to find existing record for this goal+month
         response = (
             self._client.table("goal_contributions")
             .select("id,planned_amount,actual_amount")
@@ -337,3 +345,30 @@ class SupabaseRepository(FinancialRepository):
         self._client.table("goal_contributions").delete().eq(
             "id", contribution_id
         ).execute()
+
+    # ── Monthly Snapshots (Evolução Patrimonial) ──────────────────
+    def save_monthly_snapshot(
+        self, month_year: str, reserve_value: float, goals_value: float
+    ) -> None:
+        total_wealth = reserve_value + goals_value
+        self._client.table("monthly_snapshots").upsert(
+            {
+                "month_year": month_year,
+                "reserve_value": reserve_value,
+                "goals_value": goals_value,
+                "total_wealth": total_wealth,
+            },
+            on_conflict="month_year",
+        ).execute()
+
+    def get_wealth_snapshots(self, months: int = 12) -> list[MonthlySnapshot]:
+        cutoff = (date.today() - timedelta(days=months * 30)).strftime("%Y-%m")
+        response = (
+            self._client.table("monthly_snapshots")
+            .select("*")
+            .gte("month_year", cutoff)
+            .order("month_year")
+            .execute()
+        )
+        data = response.data if (response and response.data) else []
+        return [self._row_to_monthly_snapshot(r) for r in data]

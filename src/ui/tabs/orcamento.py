@@ -110,14 +110,19 @@ def render_orcamento_tab(
             "Tipo", ["Fixa 📌", "Periódica 🗓️"]
         )
         exp_value = st.number_input("Valor (R$)", min_value=0.0, step=10.0)
-        frequency = st.number_input(
-            "Periodicidade em Meses",
-            min_value=1,
-            max_value=24,
-            value=12,
-            help="Ex: 12 para despesa anual, 6 para semestral, 2 para bimestral. Ignorado para custos mensais.",
-            key="exp_freq_orcamento",
-        )
+
+        # Show periodicity input ONLY if Periódica is selected
+        if "Periódica" in str(exp_type):
+            frequency = st.number_input(
+                "Periodicidade em Meses",
+                min_value=1,
+                max_value=24,
+                value=12,
+                help="Ex: 12 para despesa anual, 6 para semestral, 2 para bimestral.",
+                key="exp_freq_orcamento",
+            )
+        else:
+            frequency = 1
 
         if st.button("Adicionar Despesa"):
             if exp_name and exp_value > 0:

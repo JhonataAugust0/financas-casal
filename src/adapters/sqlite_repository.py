@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import date, timedelta
 
-from src.domain.models import Expense, Goal, GoalContribution, MonthlyRealized, User
+from src.domain.models import Expense, Goal, GoalContribution, MonthlyRealized, MonthlySnapshot, User
 from src.ports.repository import FinancialRepository
 
 
@@ -46,6 +46,17 @@ class SQLiteRepository(FinancialRepository):
                 planned_amount REAL DEFAULT 0.0,
                 actual_amount REAL NOT NULL,
                 UNIQUE(goal_id, month_year)
+            )
+        """)
+
+        # Create monthly_snapshots table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS monthly_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                month_year TEXT NOT NULL UNIQUE,
+                reserve_value REAL NOT NULL DEFAULT 0.0,
+                goals_value REAL NOT NULL DEFAULT 0.0,
+                total_wealth REAL NOT NULL DEFAULT 0.0
             )
         """)
 
@@ -199,11 +210,7 @@ class SQLiteRepository(FinancialRepository):
     def sync_reserva_paz(
         self, target_value: float, is_maintenance: bool
     ) -> None:
-        """Upsert the mandatory 🛡️ Segurança goal.
-
-        Renames and recalculates the safety reserve in real-time based
-        on whether maintenance mode is active.
-        """
+        """Upsert the mandatory 🛡️ Segurança goal."""
         subcategory_name = (
             "Fundo de Manutenção" if is_maintenance else "Fundo de Sobrevivência"
         )
@@ -310,3 +317,37 @@ class SQLiteRepository(FinancialRepository):
             "DELETE FROM goal_contributions WHERE id=?", (contribution_id,)
         )
         self._conn.commit()
+
+    # ── Monthly Snapshots (Evolução Patrimonial) ──────────────────
+    def save_monthly_snapshot(
+        self, month_year: str, reserve_value: float, goals_value: float
+    ) -> None:
+        total_wealth = reserve_value + goals_value
+        self._conn.execute(
+            """INSERT INTO monthly_snapshots (month_year, reserve_value, goals_value, total_wealth)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(month_year)
+               DO UPDATE SET reserve_value=excluded.reserve_value,
+                             goals_value=excluded.goals_value,
+                             total_wealth=excluded.total_wealth""",
+            (month_year, reserve_value, goals_value, total_wealth),
+        )
+        self._conn.commit()
+
+    def get_wealth_snapshots(self, months: int = 12) -> list[MonthlySnapshot]:
+        cutoff = (date.today() - timedelta(days=months * 30)).strftime("%Y-%m")
+        cursor = self._conn.cursor()
+        cursor.execute(
+            "SELECT * FROM monthly_snapshots WHERE month_year >= ? ORDER BY month_year ASC",
+            (cutoff,),
+        )
+        return [
+            MonthlySnapshot(
+                id=int(row["id"]),
+                month_year=row["month_year"],
+                reserve_value=float(row["reserve_value"]),
+                goals_value=float(row["goals_value"]),
+                total_wealth=float(row["total_wealth"]),
+            )
+            for row in cursor.fetchall()
+        ]

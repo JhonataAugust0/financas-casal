@@ -69,13 +69,13 @@ def _render_partner_summary(
             personal_items = [e for e in expenses if e.scope == "PERSONAL"]
 
             if shared_items:
-                st.markdown("#### 🏠 O Nosso")
+                st.markdown("#### O Nosso")
                 for exp in shared_items:
                     _render_expense_row(repo, exp)
 
             if personal_items:
                 if shared_items: st.markdown("---")
-                st.markdown("#### 👤 O Meu")
+                st.markdown("#### O Meu")
                 for exp in personal_items:
                     _render_expense_row(repo, exp)
         else:
@@ -83,31 +83,36 @@ def _render_partner_summary(
 
         st.write("")
         with st.popover(f"➕ Adicionar Custo para {user.name}", use_container_width=True):
-            with st.form(f"add_exp_resumo_{user.id}", clear_on_submit=True):
-                st.markdown(f"**Novo Custo ({user.name})**")
-                a_name = st.text_input("Nome da Despesa", placeholder="Ex: Terapia, Farmácia, Higiene", key=f"aen_{user.id}")
-                
-                a_scope = st.radio(
-                    "Quem Paga?",
-                    [
-                        "🏠 O Nosso (Bolo Central)",
-                        "👤 O Meu (Mesada Individual)",
-                    ],
-                    key=f"aes_{user.id}",
-                )
-                a_type = st.radio("Tipo de Frequência", ["Fixa 📌", "Periódica 🗓️"], key=f"aet_{user.id}")
-                a_val = st.number_input("Valor (R$)", min_value=0.0, step=10.0, key=f"aev_{user.id}")
+            st.markdown(f"**Novo Custo ({user.name})**")
+            a_name = st.text_input("Nome da Despesa", placeholder="Ex: Terapia, Farmácia, Higiene", key=f"aen_{user.id}")
+            
+            a_scope = st.radio(
+                "Quem Paga?",
+                [
+                    "🏠 O Nosso (Bolo Central)",
+                    "👤 O Meu (Mesada Individual)",
+                ],
+                key=f"aes_{user.id}",
+            )
+            a_type = st.radio("Tipo de Frequência", ["Fixa 📌", "Periódica 🗓️"], key=f"aet_{user.id}")
+            a_val = st.number_input("Valor (R$)", min_value=0.0, step=10.0, key=f"aev_{user.id}")
+            
+            # Show periodicity input ONLY if Periódica is selected
+            if "Periódica" in str(a_type):
                 a_freq = st.number_input(
                     "Periodicidade em Meses",
                     min_value=1,
                     max_value=24,
                     value=12,
-                    help="Ex: 12 = Anual, 6 = Semestral, 2 = Bimestral, 1 = Mensal.",
+                    help="Ex: 12 = Anual, 6 = Semestral, 2 = Bimestral.",
                     key=f"aef_{user.id}",
                 )
-                
-                if st.form_submit_button("Adicionar") and a_name and a_val > 0:
-                    is_fixed = "Fixa" in a_type
+            else:
+                a_freq = 1
+            
+            if st.button("Adicionar Despesa", key=f"btn_add_{user.id}"):
+                if a_name and a_val > 0:
+                    is_fixed = "Fixa" in str(a_type)
                     db_type = "FIXED" if is_fixed else "PERIODIC"
                     final_freq = 1 if is_fixed else int(a_freq)
                     db_scope = "SHARED" if "Nosso" in a_scope else "PERSONAL"
@@ -131,30 +136,32 @@ def _render_expense_row(repo: FinancialRepository, exp: Expense) -> None:
         )
     with c_edit:
         with st.popover("⚙️"):
-            with st.form(f"edit_exp_{exp.id}"):
-                st.markdown("**Editar Custo**")
-                e_name = st.text_input("Nome", value=exp.name, key=f"exn_{exp.id}")
-                e_scope = st.radio(
-                    "Quem Paga?",
-                    [
-                        "🏠 O Nosso (Bolo Central)",
-                        "👤 O Meu (Mesada Individual)",
-                    ],
-                    index=0 if exp.scope == "SHARED" else 1,
-                    key=f"exs_{exp.id}",
-                )
-                e_type = st.radio(
-                    "Tipo de Frequência",
-                    ["Fixa 📌", "Periódica 🗓️"],
-                    index=0 if exp.type == "FIXED" else 1,
-                    key=f"ext_{exp.id}",
-                )
-                e_val = st.number_input(
-                    "Valor (R$)",
-                    value=float(exp.value),
-                    step=10.0,
-                    key=f"exv_{exp.id}",
-                )
+            st.markdown("**Editar Custo**")
+            e_name = st.text_input("Nome", value=exp.name, key=f"exn_{exp.id}")
+            e_scope = st.radio(
+                "Quem Paga?",
+                [
+                    "🏠 O Nosso (Bolo Central)",
+                    "👤 O Meu (Mesada Individual)",
+                ],
+                index=0 if exp.scope == "SHARED" else 1,
+                key=f"exs_{exp.id}",
+            )
+            e_type = st.radio(
+                "Tipo de Frequência",
+                ["Fixa 📌", "Periódica 🗓️"],
+                index=0 if exp.type == "FIXED" else 1,
+                key=f"ext_{exp.id}",
+            )
+            e_val = st.number_input(
+                "Valor (R$)",
+                value=float(exp.value),
+                step=10.0,
+                key=f"exv_{exp.id}",
+            )
+            
+            # Show periodicity input ONLY if Periódica is selected
+            if "Periódica" in str(e_type):
                 e_freq = st.number_input(
                     "Periodicidade em Meses",
                     min_value=1,
@@ -163,14 +170,19 @@ def _render_expense_row(repo: FinancialRepository, exp: Expense) -> None:
                     help="Ex: 12 = Anual, 6 = Semestral. (Ignorado para custo Mensal)",
                     key=f"exf_{exp.id}",
                 )
-                if st.form_submit_button("Salvar"):
-                    is_fixed = "Fixa" in e_type
-                    db_type = "FIXED" if is_fixed else "PERIODIC"
-                    final_freq = 1 if is_fixed else int(e_freq)
-                    db_scope = "SHARED" if "Nosso" in e_scope else "PERSONAL"
-                    
-                    repo.update_expense(exp.id, e_name, db_type, e_val, final_freq, db_scope)
-                    st.rerun()
+            else:
+                e_freq = 1
+
+            if st.button("Salvar Alterações", key=f"save_exp_{exp.id}"):
+                is_fixed = "Fixa" in str(e_type)
+                db_type = "FIXED" if is_fixed else "PERIODIC"
+                final_freq = 1 if is_fixed else int(e_freq)
+                db_scope = "SHARED" if "Nosso" in e_scope else "PERSONAL"
+                
+                repo.update_expense(exp.id, e_name, db_type, e_val, final_freq, db_scope)
+                st.rerun()
+
+            st.markdown("---")
             if st.button("❌ Excluir", key=f"exd_{exp.id}"):
                 repo.delete_expense(exp.id)
                 st.rerun()
