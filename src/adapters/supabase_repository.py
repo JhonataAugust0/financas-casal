@@ -346,6 +346,20 @@ class SupabaseRepository(FinancialRepository):
             "id", contribution_id
         ).execute()
 
+    # ── Realized History (for Moving Average) ─────────────────────
+    def get_realized_history(self, expense_id: int, months: int = 3) -> list[MonthlyRealized]:
+        cutoff = (date.today() - timedelta(days=months * 30)).strftime("%Y-%m")
+        response = (
+            self._client.table("monthly_realized")
+            .select("*")
+            .eq("expense_id", expense_id)
+            .gte("month_year", cutoff)
+            .order("month_year", desc=True)
+            .execute()
+        )
+        data = response.data if (response and response.data) else []
+        return [self._row_to_monthly_realized(r) for r in data]
+
     # ── Monthly Snapshots (Evolução Patrimonial) ──────────────────
     def save_monthly_snapshot(
         self, month_year: str, reserve_value: float, goals_value: float
@@ -372,3 +386,22 @@ class SupabaseRepository(FinancialRepository):
         )
         data = response.data if (response and response.data) else []
         return [self._row_to_monthly_snapshot(r) for r in data]
+
+    # ── Available Closing Months (Histórico) ──────────────────────
+    def get_available_months(self) -> list[str]:
+        response = (
+            self._client.table("monthly_realized")
+            .select("month_year")
+            .order("month_year", desc=True)
+            .execute()
+        )
+        data = response.data if (response and response.data) else []
+        seen: set[str] = set()
+        result: list[str] = []
+        for row in data:
+            my = row["month_year"]
+            if my not in seen:
+                seen.add(my)
+                result.append(my)
+        return result
+

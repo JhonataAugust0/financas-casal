@@ -7,7 +7,10 @@ import streamlit as st
 from src.domain.financial_calculator import FinancialCalculator
 from src.domain.models import Expense, User
 from src.ports.repository import FinancialRepository
-from src.ui.components.charts import build_reserve_comparison_chart
+from src.ui.components.charts import (
+    build_reserve_comparison_chart,
+    build_wealth_evolution_chart,
+)
 
 
 def _get_partner_emoji(user: User) -> str:
@@ -20,6 +23,65 @@ def _get_partner_emoji(user: User) -> str:
     return "👤"
 
 
+def _render_health_thermometer(
+    repo: FinancialRepository,
+    calc: FinancialCalculator,
+    user_a: User,
+    user_b: User,
+    expenses_a: list[Expense],
+    expenses_b: list[Expense],
+) -> None:
+    """Render Termômetro de Saúde Financeira do casal + Sobra Mensal para Metas."""
+    total_income = user_a.income + user_b.income
+    all_expenses = expenses_a + expenses_b
+    shared_cost = calc.calculate_monthly_cost_from_expenses(all_expenses, scope_filter="SHARED")
+    cost_a = calc.calculate_monthly_cost_from_expenses(expenses_a, scope_filter="SHARED")
+    cost_b = calc.calculate_monthly_cost_from_expenses(expenses_b, scope_filter="SHARED")
+
+    health = calc.calculate_financial_health(total_income, shared_cost)
+    joint_sim = calc.simulate_joint_income(
+        user_a.income, user_b.income, cost_a, cost_b, user_a.allowance
+    )
+
+    st.markdown("---")
+    st.markdown("### Termômetro de Saúde Financeira")
+
+    col_metric1, col_metric2 = st.columns(2)
+    with col_metric1:
+        st.metric(
+            "Bolo Central (Essencial)",
+            f"{health['commitment_pct']:.1f}% da Renda Total",
+            delta=f"Status: {health['commitment_status']}",
+            delta_color="normal" if health["commitment_pct"] < 50 else ("off" if health["commitment_pct"] < 65 else "inverse"),
+        )
+        st.progress(min(health["commitment_pct"] / 100.0, 1.0))
+
+    with col_metric2:
+        st.metric(
+            "Sobra Mensal p/ Metas",
+            f"R$ {joint_sim.power_joint:.2f}",
+            delta="Livre após contas + mesadas",
+            delta_color="normal",
+        )
+
+    st.markdown("**Índice de Sobrecarga:**")
+    if health["commitment_pct"] >= 65:
+        st.error(
+            "🚨 **Alerta Crítico:** Mais de 65% da renda combinada está "
+            "comprometida com despesas essenciais do Bolo Central. Reduzir custos fixos liberará fôlego para aportes."
+        )
+    elif health["commitment_pct"] >= 50:
+        st.warning(
+            "⚠️ **Atenção aos Custos Essenciais:** O Bolo Central consome entre 50% e 65% da renda. "
+            "Fique atento para evitar aumentos sazonais."
+        )
+    else:
+        st.success(
+            "**Orçamento Equilibrado:** O Bolo Central está em patamar seguro (< 50% da renda). "
+            "O casal tem excelente margem para aportes e mesada livre!"
+        )
+
+
 def _render_partner_summary(
     repo: FinancialRepository,
     calc: FinancialCalculator,
@@ -28,7 +90,7 @@ def _render_partner_summary(
 ) -> None:
     """Render a single partner's financial summary card with cost management."""
     emoji = _get_partner_emoji(user)
-    
+
     # ── Separate SHARED (O NOSSO) vs PERSONAL (O MEU) ──
     shared_cost = calc.calculate_monthly_cost_from_expenses(expenses, scope_filter="SHARED")
     personal_cost = calc.calculate_monthly_cost_from_expenses(expenses, scope_filter="PERSONAL")
@@ -37,7 +99,7 @@ def _render_partner_summary(
     st.markdown(f"### {emoji} {user.name}")
     st.metric("Renda Líquida", f"R$ {user.income:.2f}")
     st.metric("Custo de Vida (🏠 O NOSSO)", f"R$ {shared_cost:.2f}")
-    
+
     # Allowance usage metric (R\$ escaped to prevent KaTeX inline math rendering in delta pill)
     st.metric(
         "Gastos da Mesada (👤 O MEU)",
@@ -74,7 +136,8 @@ def _render_partner_summary(
                     _render_expense_row(repo, exp)
 
             if personal_items:
-                if shared_items: st.markdown("---")
+                if shared_items:
+                    st.markdown("---")
                 st.markdown("#### O Meu")
                 for exp in personal_items:
                     _render_expense_row(repo, exp)
@@ -85,7 +148,7 @@ def _render_partner_summary(
         with st.popover(f"➕ Adicionar Custo para {user.name}", use_container_width=True):
             st.markdown(f"**Novo Custo ({user.name})**")
             a_name = st.text_input("Nome da Despesa", placeholder="Ex: Terapia, Farmácia, Higiene", key=f"aen_{user.id}")
-            
+
             a_scope = st.radio(
                 "Quem Paga?",
                 [
@@ -96,7 +159,7 @@ def _render_partner_summary(
             )
             a_type = st.radio("Tipo de Frequência", ["Fixa 📌", "Periódica 🗓️"], key=f"aet_{user.id}")
             a_val = st.number_input("Valor (R$)", min_value=0.0, step=10.0, key=f"aev_{user.id}")
-            
+
             # Show periodicity input ONLY if Periódica is selected
             if "Periódica" in str(a_type):
                 a_freq = st.number_input(
@@ -109,14 +172,14 @@ def _render_partner_summary(
                 )
             else:
                 a_freq = 1
-            
+
             if st.button("Adicionar Despesa", key=f"btn_add_{user.id}"):
                 if a_name and a_val > 0:
                     is_fixed = "Fixa" in str(a_type)
                     db_type = "FIXED" if is_fixed else "PERIODIC"
                     final_freq = 1 if is_fixed else int(a_freq)
                     db_scope = "SHARED" if "Nosso" in a_scope else "PERSONAL"
-                    
+
                     repo.add_expense(user.id, a_name, db_type, a_val, final_freq, db_scope)
                     st.success("Despesa adicionada com sucesso!")
                     st.rerun()
@@ -159,7 +222,7 @@ def _render_expense_row(repo: FinancialRepository, exp: Expense) -> None:
                 step=10.0,
                 key=f"exv_{exp.id}",
             )
-            
+
             # Show periodicity input ONLY if Periódica is selected
             if "Periódica" in str(e_type):
                 e_freq = st.number_input(
@@ -178,7 +241,7 @@ def _render_expense_row(repo: FinancialRepository, exp: Expense) -> None:
                 db_type = "FIXED" if is_fixed else "PERIODIC"
                 final_freq = 1 if is_fixed else int(e_freq)
                 db_scope = "SHARED" if "Nosso" in e_scope else "PERSONAL"
-                
+
                 repo.update_expense(exp.id, e_name, db_type, e_val, final_freq, db_scope)
                 st.rerun()
 
@@ -186,6 +249,17 @@ def _render_expense_row(repo: FinancialRepository, exp: Expense) -> None:
             if st.button("❌ Excluir", key=f"exd_{exp.id}"):
                 repo.delete_expense(exp.id)
                 st.rerun()
+
+
+def _render_wealth_evolution_section(repo: FinancialRepository) -> None:
+    """Section: Visual historical wealth evolution chart inside Resumo tab."""
+    snapshots = repo.get_wealth_snapshots(months=12)
+    st.markdown("---")
+    st.markdown("### 📈 Evolução Patrimonial do Casal")
+    st.caption("Curva de crescimento acumulado da Reserva de Paz e das Metas ao longo dos meses.")
+
+    chart = build_wealth_evolution_chart(snapshots)
+    st.altair_chart(chart, use_container_width=True, theme=None)
 
 
 def render_resumo_tab(
@@ -199,10 +273,14 @@ def render_resumo_tab(
     cost_b: float,
 ) -> None:
     """Render the complete 📊 Resumo tab."""
-    st.subheader("Transparência Total")
+    st.subheader("Renda e Custo de Vida")
 
     col_a, col_b = st.columns(2)
     with col_a:
         _render_partner_summary(repo, calc, user_a, expenses_a)
     with col_b:
         _render_partner_summary(repo, calc, user_b, expenses_b)
+
+    _render_health_thermometer(repo, calc, user_a, user_b, expenses_a, expenses_b)
+
+    _render_wealth_evolution_section(repo)

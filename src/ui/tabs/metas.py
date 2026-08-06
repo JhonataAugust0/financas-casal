@@ -10,7 +10,7 @@ import streamlit as st
 from src.domain.financial_calculator import FinancialCalculator
 from src.domain.models import Goal, User
 from src.ports.repository import FinancialRepository
-from src.ui.components.charts import build_wealth_evolution_chart
+
 
 _SAFETY_CATEGORY = "🛡️ Segurança"
 
@@ -55,36 +55,56 @@ def _get_avg_monthly_contribution(repo: FinancialRepository) -> float:
 
 def _render_timeline_badge(
     timeline_info: dict | None,
+    simulated_info: dict | None = None,
 ) -> None:
-    """Render a timeline projection badge for a goal."""
+    """Render a clean timeline projection card spanning 100% width for perfect alignment."""
     if timeline_info is None:
         return
 
     status = timeline_info["status"]
     if status == "CONCLUÍDA":
         st.markdown(
-            "<span style='background-color: #D5E4D4; color: #446943; "
-            "padding: 3px 8px; border-radius: 6px; font-size: 0.75rem; display: inline-block; margin-top: 4px;'>"
-            "✅ Meta Concluída!</span>",
+            "<div style='background-color: #D5E4D4; border-left: 4px solid #446943; color: #2D472C; "
+            "padding: 6px 12px; border-radius: 6px; font-size: 0.85rem; font-weight: 600; margin-top: 6px; width: 100%; box-sizing: border-box;'>"
+            "✅ Meta Concluída com Sucesso!</div>",
             unsafe_allow_html=True,
         )
     elif status == "SEM APORTE":
         st.markdown(
-            "<span style='background-color: #F5D5D5; color: #8B3A3A; "
-            "padding: 3px 8px; border-radius: 6px; font-size: 0.75rem; display: inline-block; margin-top: 4px;'>"
-            "⚠️ Sem aportes registrados</span>",
+            "<div style='background-color: #FDF2F2; border-left: 4px solid #E53E3E; color: #9B2C2C; "
+            "padding: 6px 12px; border-radius: 6px; font-size: 0.85rem; font-weight: 600; margin-top: 6px; width: 100%; box-sizing: border-box;'>"
+            "⚠️ Sem aportes suficientes para projetar conclusão</div>",
             unsafe_allow_html=True,
         )
     else:
-        months = timeline_info["estimated_months"]
-        est_date = timeline_info["estimated_date"]
-        remaining = timeline_info["remaining"]
-        st.markdown(
-            f"<span style='background-color: #E8DFF5; color: #5C4A7A; "
-            f"padding: 4px 10px; border-radius: 6px; font-size: 0.78rem; display: inline-block; margin-top: 4px;'>"
-            f"📅 Previsão: **{est_date}** (~{months}m · R$ {remaining:.2f} faltam)</span>",
-            unsafe_allow_html=True,
-        )
+        if simulated_info and simulated_info.get("months_saved", 0) > 0:
+            sim_date = simulated_info["simulated_date"]
+            sim_months = simulated_info["simulated_months"]
+            saved = simulated_info["months_saved"]
+            month_label = "MÊS" if saved == 1 else "MESES"
+            st.markdown(
+                f"<div style='background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%); border-left: 4px solid #10B981; color: #065F46; "
+                f"padding: 8px 12px; border-radius: 8px; font-size: 0.88rem; font-weight: 600; margin-top: 6px; width: 100%; box-sizing: border-box; "
+                f"display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px;'>"
+                f"<span>🚀 <strong>Nova Previsão: {sim_date}</strong> <small style='color: #047857;'>({sim_months}m restantes)</small></span>"
+                f"<span style='background-color: #059669; color: #FFFFFF; padding: 3px 10px; border-radius: 12px; font-size: 0.78rem; font-weight: 700;'>"
+                f"⚡ {saved} {month_label} MAIS RÁPIDO!</span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            months = timeline_info["estimated_months"]
+            est_date = timeline_info["estimated_date"]
+            remaining = timeline_info["remaining"]
+            st.markdown(
+                f"<div style='background: linear-gradient(135deg, #F3E8FF 0%, #E9D5FF 100%); border-left: 4px solid #8B5CF6; color: #4C1D95; "
+                f"padding: 8px 12px; border-radius: 8px; font-size: 0.88rem; font-weight: 600; margin-top: 6px; width: 100%; box-sizing: border-box; "
+                f"display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px;'>"
+                f"<span>📅 <strong>Conclusão Prevista: {est_date}</strong> <small style='color: #6B21A8;'>({months}m restantes)</small></span>"
+                f"<span style='font-size:0.82rem; color: #5B21B6;'>Faltam R$ {remaining:.2f}</span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
 
 
 def _render_goal_item(
@@ -92,64 +112,54 @@ def _render_goal_item(
     goal: Goal,
     is_safety: bool,
     timeline_map: dict[int, dict] | None = None,
+    simulated_map: dict[int, dict] | None = None,
 ) -> None:
-    """Render a single goal item with progress bar, timeline badge, and optional edit controls."""
+    """Render a single goal item with unified ⚙️ popover containing edit + delete."""
     progress = (
         goal.current_value / goal.target_value if goal.target_value > 0 else 0
     )
 
-    col_item, col_edit = st.columns([0.85, 0.15])
-    with col_item:
-        link_html = (
-            f" <a href='{goal.link}' target='_blank'>🔗</a>"
-            if goal.link
-            else ""
-        )
+    c_title, c_edit, c_del = st.columns([0.82, 0.09, 0.09])
+    with c_title:
+        link_html = f" <a href='{goal.link}' target='_blank'>🔗</a>" if goal.link else ""
         st.markdown(
-            f"<div style='display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px;'>"
-            f"<span style='font-size: 0.9rem;'>**{goal.name}** (Prio {goal.priority}){link_html}</span>"
-            f"<span style='font-size: 0.8rem; color: #888; white-space: nowrap;'>R$ {goal.current_value:.2f} / R$ {goal.target_value:.2f}</span>"
+            f"<div style='display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px; width: 100%; box-sizing: border-box;'>"
+            f"<span style='font-size: 1rem; line-height: 1.4;'><strong>{goal.name}</strong> "
+            f"<small style='color: #9B8E8A;'>(Prio {goal.priority})</small>{link_html}</span>"
+            f"<span style='font-size: 0.9rem; color: #37352F; font-weight: 700; white-space: nowrap;'>R$ {goal.current_value:.2f} / R$ {goal.target_value:.2f}</span>"
             f"</div>",
             unsafe_allow_html=True,
         )
-        st.progress(min(progress, 1.0))
-
-        if timeline_map and goal.id in timeline_map:
-            _render_timeline_badge(timeline_map[goal.id])
 
     if not is_safety:
-        with col_edit:
-            with st.popover("⚙️"):
+        with c_edit:
+            with st.popover("⚙️", use_container_width=True):
+                st.markdown("**Editar Meta**")
                 with st.form(f"ef_{goal.id}"):
-                    edit_name = st.text_input(
-                        "Nome", value=goal.name, key=f"en_{goal.id}"
-                    )
-                    edit_link = st.text_input(
-                        "Link", value=goal.link, key=f"el_{goal.id}"
-                    )
+                    edit_name = st.text_input("Nome", value=goal.name, key=f"en_{goal.id}")
+                    edit_link = st.text_input("Link", value=goal.link, key=f"el_{goal.id}")
                     ce1, ce2 = st.columns(2)
                     with ce1:
-                        edit_target = st.number_input(
-                            "Valor",
-                            value=float(goal.target_value),
-                            step=50.0,
-                            key=f"et_{goal.id}",
-                        )
+                        edit_target = st.number_input("Valor", value=float(goal.target_value), step=50.0, key=f"et_{goal.id}")
                     with ce2:
-                        edit_priority = st.number_input(
-                            "Prio",
-                            value=int(goal.priority),
-                            step=1,
-                            key=f"ep_{goal.id}",
-                        )
+                        edit_priority = st.number_input("Prio", value=int(goal.priority), step=1, key=f"ep_{goal.id}")
                     if st.form_submit_button("Salvar"):
-                        repo.update_goal_details(
-                            goal.id, edit_name, edit_target, edit_priority, edit_link
-                        )
+                        repo.update_goal_details(goal.id, edit_name, edit_target, edit_priority, edit_link)
                         st.rerun()
-                if st.button("❌ Excluir", key=f"di_{goal.id}"):
+        with c_del:
+            with st.popover("🗑️", use_container_width=True):
+                st.markdown(f"**Excluir '{goal.name}'?**")
+                if st.button("Confirmar", key=f"di_{goal.id}", use_container_width=True):
                     repo.delete_goal(goal.id)
                     st.rerun()
+
+    st.progress(min(progress, 1.0))
+
+    if timeline_map and goal.id in timeline_map:
+        sim_info = simulated_map.get(goal.id) if simulated_map else None
+        _render_timeline_badge(timeline_map[goal.id], sim_info)
+
+    st.markdown("<div style='margin-bottom: 12px;'></div>", unsafe_allow_html=True)
 
 
 def _render_subcategory(
@@ -159,73 +169,50 @@ def _render_subcategory(
     goals: list[Goal],
     is_safety: bool,
     timeline_map: dict[int, dict] | None = None,
+    simulated_map: dict[int, dict] | None = None,
 ) -> None:
-    """Render a subcategory header, its goals, and management controls."""
-    sub_target = sum(g.target_value for g in goals)
-    sub_current = sum(g.current_value for g in goals)
-
-    st.markdown(
-        f"<div style='display: flex; justify-content: space-between; "
-        f"align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin-top: 20px; margin-bottom: 8px; "
-        f"border-bottom: 1px solid #EAE0D5; padding-bottom: 4px;'>"
-        f"<h4 style='color: #5C4A4D; font-size: 1.05rem; margin: 0;'>"
-        f"📁 {subcategory}</h4>"
-        f"<span style='font-size: 0.85rem; color: #7A6C68; white-space: nowrap;'>"
-        f"R$ {sub_current:.2f} / R$ {sub_target:.2f}</span></div>",
-        unsafe_allow_html=True,
-    )
-
+    """Render clean subcategory header with inline delete button."""
     if not is_safety:
-        _col_spacer, col_delete = st.columns([0.7, 0.3])
-        with col_delete:
-            with st.popover("🗑️ Excluir Subcategoria", use_container_width=True):
-                if st.button(
-                    "Confirmar Exclusão", key=f"dels_{category}_{subcategory}"
-                ):
+        col_sub_title, col_sub_del = st.columns([0.91, 0.09])
+        with col_sub_title:
+            st.markdown(
+                f"<div style='margin-top: 14px; margin-bottom: 8px; border-bottom: 1px solid #EAE0D5; padding-bottom: 4px;'>"
+                f"<h4 style='color: #5C4A4D; font-size: 1.08rem; margin: 0;'>"
+                f"📁 {subcategory}</h4></div>",
+                unsafe_allow_html=True,
+            )
+        with col_sub_del:
+            st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
+            with st.popover("🗑️", use_container_width=True):
+                st.markdown(f"**Excluir '{subcategory}'?**")
+                st.caption("Todos os itens desta subcategoria serão removidos.")
+                if st.button("Confirmar Exclusão", key=f"dels_{category}_{subcategory}"):
                     repo.delete_subcategory(category, subcategory)
                     st.rerun()
+    else:
+        st.markdown(
+            f"<div style='margin-top: 14px; margin-bottom: 8px; border-bottom: 1px solid #EAE0D5; padding-bottom: 4px;'>"
+            f"<h4 style='color: #5C4A4D; font-size: 1.08rem; margin: 0;'>"
+            f"📁 {subcategory}</h4></div>",
+            unsafe_allow_html=True,
+        )
 
     sorted_goals = sorted(goals, key=lambda g: g.priority)
     for goal in sorted_goals:
-        _render_goal_item(repo, goal, is_safety, timeline_map)
+        _render_goal_item(repo, goal, is_safety, timeline_map, simulated_map)
 
     if not is_safety:
-        st.write("")
-        with st.popover(
-            f"➕ Adicionar em {subcategory}", use_container_width=True
-        ):
-            with st.form(
-                f"fa_{category}_{subcategory}", clear_on_submit=True
-            ):
-                new_name = st.text_input(
-                    "Nome", key=f"an_{category}_{subcategory}"
-                )
-                new_link = st.text_input(
-                    "Link", key=f"al_{category}_{subcategory}"
-                )
+        with st.popover(f"➕ Adicionar em {subcategory}", use_container_width=True):
+            with st.form(f"fa_{category}_{subcategory}", clear_on_submit=True):
+                new_name = st.text_input("Nome", key=f"an_{category}_{subcategory}")
+                new_link = st.text_input("Link", key=f"al_{category}_{subcategory}")
                 c1, c2 = st.columns(2)
                 with c1:
-                    new_target = st.number_input(
-                        "R$",
-                        min_value=0.0,
-                        step=50.0,
-                        key=f"at_{category}_{subcategory}",
-                    )
+                    new_target = st.number_input("R$", min_value=0.0, step=50.0, key=f"at_{category}_{subcategory}")
                 with c2:
-                    new_priority = st.number_input(
-                        "Prio",
-                        min_value=1,
-                        step=1,
-                        key=f"ap_{category}_{subcategory}",
-                    )
-                if (
-                    st.form_submit_button("Salvar")
-                    and new_name
-                    and new_target > 0
-                ):
-                    repo.add_goal(
-                        new_name, category, subcategory, new_target, new_priority, new_link
-                    )
+                    new_priority = st.number_input("Prio", min_value=1, step=1, key=f"ap_{category}_{subcategory}")
+                if st.form_submit_button("Salvar") and new_name and new_target > 0:
+                    repo.add_goal(new_name, category, subcategory, new_target, new_priority, new_link)
                     st.rerun()
 
 
@@ -234,8 +221,9 @@ def _render_category_card(
     category: str,
     goals: list[Goal],
     timeline_map: dict[int, dict] | None = None,
+    simulated_map: dict[int, dict] | None = None,
 ) -> None:
-    """Render a full category expander card with subcategories."""
+    """Render a single clean card box for each goal category."""
     is_safety = category == _SAFETY_CATEGORY
     cat_target = sum(g.target_value for g in goals)
     cat_current = sum(g.current_value for g in goals)
@@ -252,90 +240,69 @@ def _render_category_card(
                 ),
             )
 
-        st.markdown(
-            f"<div style='display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;'>"
-            f"<span style='background-color: #D3E0EA; color: #3A5A78; "
-            f"padding: 4px 10px; border-radius: 6px; font-size: 0.8rem;'>"
-            f"{len(goals)} Itens</span>"
-            f"<span style='background-color: #D5E4D4; color: #446943; "
-            f"padding: 4px 10px; border-radius: 6px; font-size: 0.8rem;'>"
-            f"{(cat_progress * 100):.1f}% Concluído</span></div>",
-            unsafe_allow_html=True,
-        )
+        # Header row above main category progress bar, matching 0.82 column ratio for exact right alignment with items!
+        col_cat_info, _col_cat_empty = st.columns([0.82, 0.18])
+        with col_cat_info:
+            st.markdown(
+                f"<div style='display: flex; justify-content: space-between; align-items: center; margin-top: 2px; margin-bottom: 6px; width: 100%; box-sizing: border-box;'>"
+                f"<div style='display: flex; gap: 8px; flex-wrap: wrap;'>"
+                f"<span style='background-color: #D3E0EA; color: #3A5A78; padding: 3px 8px; border-radius: 6px; font-size: 0.8rem;'>{len(goals)} Itens</span>"
+                f"<span style='background-color: #D5E4D4; color: #446943; padding: 3px 8px; border-radius: 6px; font-size: 0.8rem;'>{(cat_progress * 100):.1f}% Concluído</span>"
+                f"</div>"
+                f"<span style='font-size: 0.9rem; color: #37352F; font-weight: 700; white-space: nowrap;'>R$ {cat_current:.2f} / R$ {cat_target:.2f}</span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
         st.progress(min(cat_progress, 1.0))
-        st.markdown(
-            f"<p style='text-align: right; font-size: 0.85rem; "
-            f"color: #7A6C68; margin-top: -10px; white-space: nowrap;'>"
-            f"Total: R$ {cat_current:.2f} / R$ {cat_target:.2f}</p>",
-            unsafe_allow_html=True,
-        )
 
         subcategories: dict[str, list[Goal]] = defaultdict(list)
         for goal in goals:
             subcategories[goal.subcategory or "Geral"].append(goal)
 
         for subcat, sub_goals in subcategories.items():
-            _render_subcategory(repo, category, subcat, sub_goals, is_safety, timeline_map)
+            _render_subcategory(repo, category, subcat, sub_goals, is_safety, timeline_map, simulated_map)
 
         if not is_safety:
             st.write("")
-            with st.popover(
-                f"➕ Criar nova subcategoria em {category}",
-                use_container_width=True,
-            ):
+            with st.popover(f"➕ Criar nova subcategoria em {category}", use_container_width=True):
                 with st.form(f"fns_{category}", clear_on_submit=True):
                     ns_sub = st.text_input("Nova Subcategoria")
                     ns_name = st.text_input("Primeiro Item")
                     ns_link = st.text_input("Link")
                     sc1, sc2 = st.columns(2)
                     with sc1:
-                        ns_target = st.number_input(
-                            "R$", min_value=0.0, step=50.0
-                        )
+                        ns_target = st.number_input("R$", min_value=0.0, step=50.0)
                     with sc2:
-                        ns_priority = st.number_input(
-                            "Prio", min_value=1, step=1
-                        )
-                    if (
-                        st.form_submit_button("Criar")
-                        and ns_sub
-                        and ns_name
-                        and ns_target > 0
-                    ):
-                        repo.add_goal(
-                            ns_name, category, ns_sub, ns_target, ns_priority, ns_link
-                        )
+                        ns_priority = st.number_input("Prio", min_value=1, step=1)
+                    if st.form_submit_button("Criar") and ns_sub and ns_name and ns_target > 0:
+                        repo.add_goal(ns_name, category, ns_sub, ns_target, ns_priority, ns_link)
                         st.rerun()
 
 
 def _render_global_creation_form(repo: FinancialRepository, has_goals: bool) -> None:
-    """Global form for creating entirely new category cards."""
+    """Global form for creating entirely new category cards — no inner borders."""
     with st.expander(
         "✨ Criar Novo Cartão Principal (Meta Global)", expanded=not has_goals
     ):
-        with st.form("fg", clear_on_submit=True):
-            c1, c2 = st.columns(2)
-            with c1:
-                new_category = st.text_input(
-                    "Meta Principal (Cartão)", placeholder="Ex: Viagens"
-                )
-                new_name = st.text_input("Nome do Item")
-            with c2:
-                new_subcategory = st.text_input(
-                    "Subcategoria", placeholder="Ex: Aéreo"
-                )
-                new_target = st.number_input("Valor Alvo (R$)", step=100.0)
-            new_priority = st.number_input(
-                "Prioridade (Não use o 1)", min_value=2, step=1
+        # Form fields without nesting st.form (the wrapper expander IS the visual container)
+        c1, c2 = st.columns(2)
+        with c1:
+            new_category = st.text_input(
+                "Meta Principal (Cartão)", placeholder="Ex: Viagens", key="gc_cat"
             )
+            new_name = st.text_input("Nome do Item", key="gc_name")
+        with c2:
+            new_subcategory = st.text_input(
+                "Subcategoria", placeholder="Ex: Aéreo", key="gc_sub"
+            )
+            new_target = st.number_input("Valor Alvo (R$)", step=100.0, key="gc_target")
+        new_priority = st.number_input(
+            "Prioridade (Não use o 1)", min_value=2, step=1, key="gc_prio"
+        )
 
-            if (
-                st.form_submit_button("Salvar na Base")
-                and new_category
-                and new_subcategory
-                and new_name
-                and new_target > 0
-            ):
+        if st.button("💾 Salvar na Base", use_container_width=True, key="gc_save"):
+            if new_category and new_subcategory and new_name and new_target > 0:
                 if new_category == _SAFETY_CATEGORY:
                     st.error(
                         "Atenção: O nome '🛡️ Segurança' é uma placa "
@@ -350,17 +317,10 @@ def _render_global_creation_form(repo: FinancialRepository, has_goals: bool) -> 
                         new_priority,
                     )
                     st.rerun()
+            else:
+                st.warning("Preencha todos os campos obrigatórios: Meta Principal, Subcategoria, Nome e Valor > 0.")
 
 
-def _render_wealth_evolution_section(repo: FinancialRepository) -> None:
-    """Section: Visual historical wealth evolution chart inside Metas tab."""
-    snapshots = repo.get_wealth_snapshots(months=12)
-    st.markdown("---")
-    st.markdown("### Evolução Patrimonial do Casal")
-    st.caption("Curva de crescimento acumulado da Reserva de Paz e das Metas ao longo dos meses.")
-
-    chart = build_wealth_evolution_chart(snapshots)
-    st.altair_chart(chart, use_container_width=True, theme=None)
 
 
 def _render_contribution_history(
@@ -416,8 +376,8 @@ def _render_contribution_history(
             for c in month_contribs:
                 gname = goal_name_map.get(c.goal_id, f"Meta #{c.goal_id}")
                 st.markdown(
-                    f"  • **{gname}**: Planejado R\\$ {c.planned_amount:.2f} → "
-                    f"Real R\\$ {c.actual_amount:.2f}"
+                    f"  • **{gname}**: Planejado R$ {c.planned_amount:.2f} → "
+                    f"Real R$ {c.actual_amount:.2f}"
                 )
 
     if monthly_totals:
@@ -425,8 +385,8 @@ def _render_contribution_history(
         num_months = len(monthly_totals)
         st.markdown("---")
         st.metric(
-            f"🎯 Média de Aporte Real Mensal (últimos {num_months} meses)",
-            f"R$ {avg_actual:.2f}",
+            f"Média de Aporte Real Mensal (últimos {num_months} meses)",
+            f"R\\$ {avg_actual:.2f}",
         )
         st.caption(
             "Esta média é usada acima para projetar as datas de conclusão dos objetivos."
@@ -490,7 +450,39 @@ def render_metas_tab(
             st.rerun()
 
         st.divider()
+
+        # ── Clean Interactive "E se?" Simulator ──
+        simulated_map: dict[int, dict] = {}
+        if avg_contribution > 0:
+            st.markdown("### Simulador \"E se?\"")
+            st.caption("Arraste o slider para simular a aceleração das metas ao aumentar o aporte mensal:")
+
+            extra_sim = st.slider(
+                "Aporte Extra Simulado (R$/mês)",
+                min_value=0,
+                max_value=2000,
+                value=300,
+                step=50,
+                key="what_if_slider",
+                help="Arraste para ver a antecipação de meses na conclusão das metas.",
+            )
+
+            if extra_sim > 0:
+                simulations = calc.simulate_what_if(goals, avg_contribution, float(extra_sim))
+                for sim in simulations:
+                    simulated_map[sim["goal_id"]] = sim
+
+                st.info(
+                    f"⚡ **Aportando +R\\$ {extra_sim:.2f}/mês** (total R\\$ {(avg_contribution + extra_sim):.2f}/mês): "
+                    f"As previsões nos cartões abaixo foram recalculadas em tempo real!"
+                )
+
+            st.divider()
+
         st.markdown("### Painel de Metas")
+
+        # ── Wrap in metas-card-wrapper for scoped CSS borders ──
+        st.markdown("<div class='metas-card-wrapper'>", unsafe_allow_html=True)
 
         categories_map: dict[str, list[Goal]] = defaultdict(list)
         for goal in goals:
@@ -502,11 +494,18 @@ def render_metas_tab(
             ordered_categories.insert(0, _SAFETY_CATEGORY)
 
         for category in ordered_categories:
-            _render_category_card(repo, category, categories_map[category], timeline_map)
+            _render_category_card(repo, category, categories_map[category], timeline_map, simulated_map)
 
-    st.write("")
-    _render_global_creation_form(repo, bool(goals))
+        st.write("")
+        _render_global_creation_form(repo, bool(goals))
 
-    # ── History & Wealth Evolution inside Metas tab ──
-    _render_wealth_evolution_section(repo)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    else:
+        # No goals yet — show creation form inside wrapper too
+        st.markdown("<div class='metas-card-wrapper'>", unsafe_allow_html=True)
+        _render_global_creation_form(repo, False)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # ── History ──
     _render_contribution_history(repo)

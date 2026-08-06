@@ -318,6 +318,25 @@ class SQLiteRepository(FinancialRepository):
         )
         self._conn.commit()
 
+    # ── Realized History (for Moving Average) ─────────────────────
+    def get_realized_history(self, expense_id: int, months: int = 3) -> list[MonthlyRealized]:
+        cutoff = (date.today() - timedelta(days=months * 30)).strftime("%Y-%m")
+        cursor = self._conn.cursor()
+        cursor.execute(
+            "SELECT * FROM monthly_realized WHERE expense_id=? AND month_year >= ? ORDER BY month_year DESC",
+            (expense_id, cutoff),
+        )
+        return [
+            MonthlyRealized(
+                id=int(row["id"]),
+                expense_id=int(row["expense_id"]),
+                month_year=row["month_year"],
+                budgeted_value=float(row["budgeted_value"]),
+                actual_value=float(row["actual_value"]),
+            )
+            for row in cursor.fetchall()
+        ]
+
     # ── Monthly Snapshots (Evolução Patrimonial) ──────────────────
     def save_monthly_snapshot(
         self, month_year: str, reserve_value: float, goals_value: float
@@ -351,3 +370,12 @@ class SQLiteRepository(FinancialRepository):
             )
             for row in cursor.fetchall()
         ]
+
+    # ── Available Closing Months (Histórico) ──────────────────────
+    def get_available_months(self) -> list[str]:
+        cursor = self._conn.cursor()
+        cursor.execute(
+            "SELECT DISTINCT month_year FROM monthly_realized ORDER BY month_year DESC"
+        )
+        return [row["month_year"] for row in cursor.fetchall()]
+

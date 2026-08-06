@@ -262,3 +262,134 @@ class FinancialCalculator:
             "total_current_wealth": round(total_current, 2),
             "joint_benefit": round(deficit_rescued, 2),
         }
+
+    # ── What-If Simulator ─────────────────────────────────────────
+
+    def simulate_what_if(
+        self,
+        goals: list[Goal],
+        current_avg: float,
+        extra_amount: float,
+    ) -> list[dict]:
+        """Simulate goal timelines with an extra monthly contribution.
+
+        Returns a list of dicts per goal with:
+        - goal_name, current_months, simulated_months, months_saved, simulated_date
+        """
+        if not goals or current_avg <= 0:
+            return []
+
+        current_timelines = self.project_goal_timelines(goals, current_avg)
+        simulated_timelines = self.project_goal_timelines(
+            goals, current_avg + extra_amount
+        )
+
+        results = []
+        sim_map = {t["goal_id"]: t for t in simulated_timelines}
+
+        for curr in current_timelines:
+            sim = sim_map.get(curr["goal_id"])
+            if not sim or curr["status"] == "CONCLUÍDA":
+                continue
+
+            curr_months = curr["estimated_months"] if curr["estimated_months"] > 0 else 0
+            sim_months = sim["estimated_months"] if sim["estimated_months"] > 0 else 0
+            saved = max(0, curr_months - sim_months)
+
+            results.append({
+                "goal_id": curr["goal_id"],
+                "goal_name": curr["goal_name"],
+                "current_months": curr_months,
+                "current_date": curr["estimated_date"],
+                "simulated_months": sim_months,
+                "simulated_date": sim["estimated_date"],
+                "months_saved": saved,
+            })
+
+        return results
+
+    # ── Financial Health Thermometer ──────────────────────────────
+
+    def calculate_financial_health(
+        self,
+        total_income: float,
+        shared_cost: float,
+        recent_actuals: list[float] | None = None,
+        older_actuals: list[float] | None = None,
+    ) -> dict:
+        """Diagnose financial health of the couple's budget.
+
+        Args:
+            total_income: Combined income of both partners.
+            shared_cost: Total monthly shared (Bolo Central) cost.
+            recent_actuals: Sum of actual Bolo Central spending for the last 3 months.
+            older_actuals: Sum of actual Bolo Central spending for the 3 months before that.
+
+        Returns:
+            commitment_pct, commitment_status, overload_trend, overload_pct
+        """
+        commitment_pct = round(
+            (shared_cost / total_income * 100), 1
+        ) if total_income > 0 else 0.0
+
+        if commitment_pct < 50:
+            commitment_status = "🟢 Saudável"
+        elif commitment_pct < 65:
+            commitment_status = "🟡 Atenção"
+        else:
+            commitment_status = "🔴 Crítico"
+
+        # Overload trend: compare recent 3-month average vs older 3-month average
+        overload_trend = "neutral"
+        overload_pct = 0.0
+
+        if recent_actuals and older_actuals:
+            recent_avg = sum(recent_actuals) / len(recent_actuals) if recent_actuals else 0
+            older_avg = sum(older_actuals) / len(older_actuals) if older_actuals else 0
+
+            if older_avg > 0:
+                overload_pct = round(((recent_avg - older_avg) / older_avg) * 100, 1)
+                if overload_pct > 5:
+                    overload_trend = "rising"
+                elif overload_pct < -5:
+                    overload_trend = "falling"
+                else:
+                    overload_trend = "stable"
+
+        return {
+            "commitment_pct": commitment_pct,
+            "commitment_status": commitment_status,
+            "overload_trend": overload_trend,
+            "overload_pct": overload_pct,
+        }
+
+    # ── Moving Average for Variable Expenses ─────────────────────
+
+    def calculate_moving_average(
+        self,
+        realized_records: list[MonthlyRealized],
+        expense_id: int,
+        fallback_value: float,
+        min_months: int = 2,
+    ) -> tuple[float, bool]:
+        """Calculate the moving average of actual spending for a given expense.
+
+        Args:
+            realized_records: Historical realized records for this expense.
+            expense_id: The expense ID to filter for.
+            fallback_value: The registered expense value to use if insufficient history.
+            min_months: Minimum number of months of data required to activate averaging.
+
+        Returns:
+            (average_value, is_moving_average_active)
+        """
+        relevant = [
+            r for r in realized_records
+            if r.expense_id == expense_id and r.actual_value > 0
+        ]
+
+        if len(relevant) < min_months:
+            return fallback_value, False
+
+        avg = sum(r.actual_value for r in relevant) / len(relevant)
+        return round(avg, 2), True

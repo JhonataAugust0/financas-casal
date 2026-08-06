@@ -141,6 +141,12 @@ class FinancialRepository(ABC):
         """Delete a specific contribution record."""
         ...
 
+    # ── Realized History (for Moving Average) ─────────────────────
+    @abstractmethod
+    def get_realized_history(self, expense_id: int, months: int = 3) -> list[MonthlyRealized]:
+        """Get realized records for a specific expense across the last N months."""
+        ...
+
     # ── Monthly Snapshots (Evolução Patrimonial) ──────────────────
     @abstractmethod
     def save_monthly_snapshot(
@@ -152,4 +158,10 @@ class FinancialRepository(ABC):
     @abstractmethod
     def get_wealth_snapshots(self, months: int = 12) -> list[MonthlySnapshot]:
         """Get historical wealth snapshots for the last N months."""
+        ...
+
+    # ── Available Closing Months (Histórico) ──────────────────────
+    @abstractmethod
+    def get_available_months(self) -> list[str]:
+        """Return distinct month_year values from monthly_realized, sorted descending."""
         ...

@@ -49,7 +49,7 @@ def _render_couple_celebration_panel(
     goals_val = max(0.0, metrics["total_current_wealth"] - safety_val)
     repo.save_monthly_snapshot(current_month, safety_val, goals_val)
 
-    st.markdown("### 🏆 Conquistas e Impacto do Casal")
+    st.markdown("### Conquistas e Impacto do Casal")
     c1, c2, c3 = st.columns(3)
     with c1:
         st.metric(
@@ -73,63 +73,6 @@ def _render_couple_celebration_panel(
     st.markdown("---")
 
 
-def _render_periodic_radar(
-    all_expenses: list[Expense],
-    realized_obj_map: dict[int, MonthlyRealized],
-    user_a: User,
-    user_b: User,
-    selected_month: str,
-) -> dict[int, bool]:
-    """Render an interactive 1-click radar for periodic purchases inside a seamless collapsible section."""
-    periodic_expenses = [e for e in all_expenses if e.type == "PERIODIC"]
-    if not periodic_expenses:
-        return {}
-
-    bought_status: dict[int, bool] = {}
-
-    with st.expander("Radar de Compras Periódicas", expanded=False):
-        st.caption(
-            "Marque com **1 clique** os produtos periódicos comprados neste mês. "
-            "O sistema ajustará automaticamente o valor cheio no fechamento."
-        )
-
-        cols = st.columns(2)
-        for idx, user in enumerate([user_a, user_b]):
-            emoji = _get_partner_emoji(user)
-            user_periodics = [e for e in periodic_expenses if e.user_id == user.id]
-
-            with cols[idx]:
-                st.markdown(f"**{emoji} Itens de {user.name}**")
-                if not user_periodics:
-                    st.caption("Nenhum item periódico.")
-                    continue
-
-                for exp in user_periodics:
-                    toggle_key = f"toggle_p_{exp.id}_{selected_month}"
-                    real_key = f"real_{exp.id}_{selected_month}"
-
-                    existing_rec = realized_obj_map.get(exp.id)
-                    if toggle_key not in st.session_state:
-                        default_checked = (existing_rec.budgeted_value > 0) if existing_rec else False
-                        st.session_state[toggle_key] = default_checked
-
-                    is_checked = st.toggle(
-                        f"🛒 **{exp.name}** (R$ {exp.value:.2f} · {exp.frequency_months}m)",
-                        key=toggle_key,
-                    )
-                    bought_status[exp.id] = is_checked
-
-                    if is_checked:
-                        if existing_rec and existing_rec.actual_value > 0 and existing_rec.budgeted_value > 0:
-                            st.session_state[real_key] = float(existing_rec.actual_value)
-                        else:
-                            st.session_state[real_key] = float(exp.value)
-                    else:
-                        st.session_state[real_key] = 0.0
-
-    return bought_status
-
-
 def _render_budget_vs_actual(
     repo: FinancialRepository,
     calc: FinancialCalculator,
@@ -138,7 +81,7 @@ def _render_budget_vs_actual(
     user_a: User,
     user_b: User,
 ) -> None:
-    """Section A: Monthly expense closing with 5-item collapsible card pagination."""
+    """Section A: Monthly expense closing with inline periodic toggles (no separate Radar)."""
     st.markdown("### Orçado vs. Realizado")
 
     today = date.today()
@@ -166,12 +109,7 @@ def _render_budget_vs_actual(
         st.info("Nenhuma despesa cadastrada. Cadastre despesas na aba 📊 Resumo ou 💰 Orçamento.")
         return
 
-    # Collapsible Radar de Compras Periódicas (Seamless)
-    bought_status = _render_periodic_radar(
-        all_expenses, realized_obj_map, user_a, user_b, selected_month
-    )
-
-    # ── Collapsible Paginated Expenses (5 Items per Page) ──
+    # ── Paginated Expenses with Inline Periodic Toggles ──
     ITEMS_PER_PAGE = 5
     total_pages = max(1, math.ceil(len(all_expenses) / ITEMS_PER_PAGE))
     page_key = f"fechamento_page_{selected_month}"
@@ -179,6 +117,7 @@ def _render_budget_vs_actual(
         st.session_state[page_key] = 1
 
     actual_values: dict[int, float] = {}
+    bought_status: dict[int, bool] = {}
 
     with st.expander("📝 Preenchimento de Despesas do Mês", expanded=True):
         # Pagination Bar
@@ -201,22 +140,88 @@ def _render_budget_vs_actual(
         start_idx = (st.session_state[page_key] - 1) * ITEMS_PER_PAGE
         page_expenses = all_expenses[start_idx : start_idx + ITEMS_PER_PAGE]
 
-        with st.form(f"fechamento_form_p{st.session_state[page_key]}", clear_on_submit=False):
-            for exp in page_expenses:
-                existing_rec = realized_obj_map.get(exp.id)
-                real_key = f"real_{exp.id}_{selected_month}"
-                emoji = _get_partner_emoji(user_a if exp.user_id == "A" else user_b)
-                scope_icon = "🏠 O NOSSO" if exp.scope == "SHARED" else "👤 O MEU"
+        for exp in page_expenses:
+            existing_rec = realized_obj_map.get(exp.id)
+            real_key = f"real_{exp.id}_{selected_month}"
+            emoji = _get_partner_emoji(user_a if exp.user_id == "A" else user_b)
+            scope_icon = "🏠 O NOSSO" if exp.scope == "SHARED" else "👤 O MEU"
 
-                if exp.type == "PERIODIC":
-                    is_bought = bought_status.get(exp.id, False)
-                    expected_str = f"R$ {exp.value:.2f} (Cheio)" if is_bought else "R$ 0.00 (Sem compra)"
-                    type_desc = f"Periódica ({exp.frequency_months}m)"
+            is_periodic = exp.type == "PERIODIC"
+
+            # ── Periodic: inline toggle ──
+            if is_periodic:
+                toggle_key = f"toggle_p_{exp.id}_{selected_month}"
+                if toggle_key not in st.session_state:
+                    default_checked = (existing_rec.budgeted_value > 0) if existing_rec else False
+                    st.session_state[toggle_key] = default_checked
+
+                # Header with recurrence badge
+                st.markdown(
+                    f"<div class='expense-item-seamless'>"
+                    f"<div style='display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px;'>"
+                    f"<span>{emoji} <strong>{exp.name}</strong> "
+                    f"<span class='badge-recurrence'>🔄 Recorrente ({exp.frequency_months}m)</span></span>"
+                    f"<span style='font-size:0.75rem; background-color:#EAE0D5; color:#5C4A4D; padding:2px 6px; border-radius:4px;'>{scope_icon}</span>"
+                    f"</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+
+                is_bought = st.toggle(
+                    f"🛒 Comprado este mês — {exp.name}",
+                    key=toggle_key,
+                    help=f"Ative se comprou {exp.name} neste mês. O valor cheio (R$ {exp.value:.2f}) será preenchido automaticamente.",
+                )
+                bought_status[exp.id] = is_bought
+
+                if is_bought:
+                    expected_str = f"R$ {exp.value:.2f} (Cheio)"
+                    if existing_rec and existing_rec.actual_value > 0 and existing_rec.budgeted_value > 0:
+                        default_val = float(existing_rec.actual_value)
+                    else:
+                        default_val = float(exp.value)
+                else:
+                    expected_str = "R$ 0.00 (Sem compra)"
+                    default_val = 0.0
+
+                st.markdown(
+                    f"<div style='font-size:0.85rem; color:#5C4A4D; margin-top:2px;'>"
+                    f"Valor Esperado: <strong>{expected_str}</strong></div>",
+                    unsafe_allow_html=True,
+                )
+
+                if real_key not in st.session_state:
+                    st.session_state[real_key] = default_val
+
+                # Sync session state when toggle changes
+                if is_bought and st.session_state.get(real_key, 0.0) == 0.0:
+                    st.session_state[real_key] = default_val
+                elif not is_bought:
+                    st.session_state[real_key] = 0.0
+
+                actual_values[exp.id] = st.number_input(
+                    f"Gasto Real (R$) — {exp.name}",
+                    min_value=0.0,
+                    step=5.0,
+                    key=real_key,
+                    disabled=not is_bought,
+                )
+
+            else:
+                # ── Fixed expense: standard flow ──
+                realized_history = repo.get_realized_history(exp.id, months=3)
+                mov_avg, is_ma_active = calc.calculate_moving_average(
+                    realized_history, exp.id, exp.value, min_months=2
+                )
+                if is_ma_active and exp.scope == "SHARED":
+                    expected_str = f"R$ {mov_avg:.2f} 📊 (Média Móvel 3m)"
+                    expected_val = mov_avg
+                    type_desc = "Mensal Fixa (Média Móvel)"
                 else:
                     expected_str = f"R$ {exp.value:.2f}"
+                    expected_val = exp.value
                     type_desc = "Mensal Fixa"
 
-                # Seamless Item Header Layout (Seamless with page background)
                 st.markdown(
                     f"<div class='expense-item-seamless'>"
                     f"<div style='display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px;'>"
@@ -230,155 +235,248 @@ def _render_budget_vs_actual(
                 )
 
                 if real_key not in st.session_state:
-                    if exp.type == "PERIODIC":
-                        is_bought = bought_status.get(exp.id, False)
-                        st.session_state[real_key] = float(exp.value) if is_bought else 0.0
-                    else:
-                        st.session_state[real_key] = float(existing_rec.actual_value) if existing_rec else float(exp.value)
+                    st.session_state[real_key] = float(existing_rec.actual_value) if existing_rec else float(expected_val)
 
                 actual_values[exp.id] = st.number_input(
                     f"Gasto Real (R$) — {exp.name}",
                     min_value=0.0,
                     step=5.0,
                     key=real_key,
-                    disabled=(exp.type == "PERIODIC" and not bought_status.get(exp.id, False)),
                 )
 
-            if st.form_submit_button("💾 Salvar Fechamento do Mês", use_container_width=True):
-                for exp in all_expenses:
-                    real_key = f"real_{exp.id}_{selected_month}"
-                    if real_key in st.session_state:
-                        actual = float(st.session_state[real_key])
-                    elif exp.id in actual_values:
-                        actual = actual_values[exp.id]
-                    else:
-                        existing_rec = realized_obj_map.get(exp.id)
-                        actual = existing_rec.actual_value if existing_rec else (exp.value if exp.type == "FIXED" else 0.0)
+        if st.button("💾 Salvar Fechamento do Mês", use_container_width=True):
+            for exp in all_expenses:
+                real_key = f"real_{exp.id}_{selected_month}"
+                if real_key in st.session_state:
+                    actual = float(st.session_state[real_key])
+                elif exp.id in actual_values:
+                    actual = actual_values[exp.id]
+                else:
+                    existing_rec = realized_obj_map.get(exp.id)
+                    actual = existing_rec.actual_value if existing_rec else (exp.value if exp.type == "FIXED" else 0.0)
 
-                    if exp.type == "FIXED":
-                        budgeted = exp.value
-                    else:
-                        is_bought = bought_status.get(exp.id, False)
-                        budgeted = exp.value if is_bought else 0.0
-                        if not is_bought:
-                            actual = 0.0
+                if exp.type == "FIXED":
+                    budgeted = exp.value
+                else:
+                    is_bought = bought_status.get(exp.id, False)
+                    budgeted = exp.value if is_bought else 0.0
+                    if not is_bought:
+                        actual = 0.0
 
-                    repo.upsert_monthly_realized(exp.id, selected_month, budgeted, actual)
+                repo.upsert_monthly_realized(exp.id, selected_month, budgeted, actual)
 
-                st.success(f"✅ Fechamento de {selected_month} salvo com sucesso!")
-                st.rerun()
+            st.success(f"✅ Fechamento de {selected_month} salvo com sucesso!")
+            st.rerun()
 
-    # ── Collapsible Variance Analysis Panel ──
+    # ── Variance Analysis Panel ──
     realized_data = repo.get_monthly_realized(selected_month)
     if realized_data:
-        with st.expander(f"📊 Diagnóstico Mensal de {selected_month}", expanded=True):
-            expense_map = {e.id: e for e in all_expenses}
-            expense_name_map = {e.id: e.name for e in all_expenses}
+        _render_diagnostics(calc, all_expenses, realized_data, user_a, user_b, selected_month)
 
-            shared_realized = [r for r in realized_data if expense_map.get(r.expense_id) and expense_map[r.expense_id].scope == "SHARED"]
-            personal_realized = [r for r in realized_data if expense_map.get(r.expense_id) and expense_map[r.expense_id].scope == "PERSONAL"]
 
-            # ── 🏠 Bolo Central diagnostics ──
-            if shared_realized:
-                shared_analysis = calc.calculate_budget_variance(shared_realized)
+def _render_diagnostics(
+    calc: FinancialCalculator,
+    all_expenses: list[Expense],
+    realized_data: list[MonthlyRealized],
+    user_a: User,
+    user_b: User,
+    selected_month: str,
+) -> None:
+    """Render the monthly diagnostics panel (budget variance analysis)."""
+    with st.expander(f"📊 Diagnóstico Mensal de {selected_month}", expanded=True):
+        expense_map = {e.id: e for e in all_expenses}
+        expense_name_map = {e.id: e.name for e in all_expenses}
 
-                st.markdown("#### 🏠 Bolo Central (O Nosso)")
-                m1, m2, m3 = st.columns(3)
-                with m1:
-                    st.metric("Orçado no Mês", f"R$ {shared_analysis['total_budgeted']:.2f}")
-                with m2:
-                    st.metric("Real", f"R$ {shared_analysis['total_actual']:.2f}")
-                with m3:
-                    var = shared_analysis["variance"]
-                    is_eco = var >= 0
+        shared_realized = [r for r in realized_data if expense_map.get(r.expense_id) and expense_map[r.expense_id].scope == "SHARED"]
+        personal_realized = [r for r in realized_data if expense_map.get(r.expense_id) and expense_map[r.expense_id].scope == "PERSONAL"]
+
+        # ── 🏠 Bolo Central diagnostics ──
+        if shared_realized:
+            shared_analysis = calc.calculate_budget_variance(shared_realized)
+
+            st.markdown("#### 🏠 Bolo Central (O Nosso)")
+            m1, m2, m3 = st.columns(3)
+            with m1:
+                st.metric("Orçado no Mês", f"R$ {shared_analysis['total_budgeted']:.2f}")
+            with m2:
+                st.metric("Real", f"R$ {shared_analysis['total_actual']:.2f}")
+            with m3:
+                var = shared_analysis["variance"]
+                is_eco = var >= 0
+                st.metric(
+                    "Economia 🟢" if is_eco else "Estouro 🔴",
+                    f"R$ {abs(var):.2f}",
+                    delta=f"{shared_analysis['variance_pct']:.1f}%",
+                    delta_color="normal" if is_eco else "inverse",
+                )
+
+            if is_eco and var > 0:
+                st.caption(
+                    f"💡 A economia de R\\$ {var:.2f} no Bolo Central pode ser redirecionada para aportes!"
+                )
+
+        # ── 👤 Mesada diagnostics (per person) ──
+        if personal_realized:
+            st.markdown("---")
+            st.markdown("#### 👤 Mesada Individual (O Meu / O Seu)")
+
+            for user in [user_a, user_b]:
+                emoji = _get_partner_emoji(user)
+                user_personal = [
+                    r for r in personal_realized
+                    if expense_map.get(r.expense_id) and expense_map[r.expense_id].user_id == user.id
+                ]
+                if not user_personal:
+                    continue
+
+                total_personal_actual = sum(r.actual_value for r in user_personal)
+                total_personal_budgeted = sum(r.budgeted_value for r in user_personal)
+                mesada_remaining = user.allowance - total_personal_actual
+
+                pc1, pc2, pc3 = st.columns(3)
+                with pc1:
                     st.metric(
-                        "Economia 🟢" if is_eco else "Estouro 🔴",
-                        f"R$ {abs(var):.2f}",
-                        delta=f"{shared_analysis['variance_pct']:.1f}%",
-                        delta_color="normal" if is_eco else "inverse",
+                        f"{emoji} {user.name} — Orçado",
+                        f"R$ {total_personal_budgeted:.2f}",
+                    )
+                with pc2:
+                    st.metric(
+                        "Gasto Real",
+                        f"R$ {total_personal_actual:.2f}",
+                    )
+                with pc3:
+                    st.metric(
+                        "Mesada Livre",
+                        f"R$ {mesada_remaining:.2f}",
+                        delta=f"de R\\$ {user.allowance:.2f}",
+                        delta_color="normal" if mesada_remaining >= 0 else "inverse",
                     )
 
-                if is_eco and var > 0:
-                    st.caption(
-                        f"💡 A economia de R\\$ {var:.2f} no Bolo Central pode ser redirecionada para aportes!"
+                if mesada_remaining < 0:
+                    st.warning(
+                        f"⚠️ {user.name} estourou a mesada em R\\$ {abs(mesada_remaining):.2f} "
+                        f"neste mês! Considere reduzir gastos pessoais ou ajustar o teto."
                     )
 
-            # ── 👤 Mesada diagnostics (per person) ──
-            if personal_realized:
-                st.markdown("---")
-                st.markdown("#### 👤 Mesada Individual (O Meu / O Seu)")
-
-                for user in [user_a, user_b]:
-                    emoji = _get_partner_emoji(user)
-                    user_personal = [
-                        r for r in personal_realized
-                        if expense_map.get(r.expense_id) and expense_map[r.expense_id].user_id == user.id
-                    ]
-                    if not user_personal:
+                for r in user_personal:
+                    exp = expense_map.get(r.expense_id)
+                    if not exp:
                         continue
+                    item_var = r.budgeted_value - r.actual_value
+                    icon = "🟢" if item_var >= 0 else "🔴"
+                    direction = "economia" if item_var >= 0 else "estouro"
+                    type_str = "Periódica" if exp.type == "PERIODIC" else "Mensal"
+                    st.markdown(
+                        f"  {icon} **{exp.name}** *({type_str})*: Orçado R\\$ {r.budgeted_value:.2f} → "
+                        f"Real R\\$ {r.actual_value:.2f} "
+                        f"*(R\\$ {abs(item_var):.2f} de {direction})*"
+                    )
 
-                    total_personal_actual = sum(r.actual_value for r in user_personal)
-                    total_personal_budgeted = sum(r.budgeted_value for r in user_personal)
-                    mesada_remaining = user.allowance - total_personal_actual
+        # ── Global top deviations ──
+        if realized_data:
+            full_analysis = calc.calculate_budget_variance(realized_data)
+            if full_analysis["items"]:
+                st.markdown("---")
+                st.markdown("#### 🔍 Top 5 Maiores Desvios (Geral)")
+                top_items = full_analysis["items"][:5]
+                for item in top_items:
+                    exp_name = expense_name_map.get(item["expense_id"], f"ID {item['expense_id']}")
+                    exp = expense_map.get(item["expense_id"])
+                    scope_icon = "🏠" if (exp and exp.scope == "SHARED") else "👤"
+                    var = item["variance"]
+                    icon = "🟢" if var >= 0 else "🔴"
+                    direction = "economia" if var >= 0 else "estouro"
+                    st.markdown(
+                        f"{icon} {scope_icon} **{exp_name}**: Orçado R\\$ {item['budgeted']:.2f} → "
+                        f"Real R\\$ {item['actual']:.2f} "
+                        f"*(R\\$ {abs(var):.2f} de {direction})*"
+                    )
 
-                    pc1, pc2, pc3 = st.columns(3)
-                    with pc1:
-                        st.metric(
-                            f"{emoji} {user.name} — Orçado",
-                            f"R$ {total_personal_budgeted:.2f}",
-                        )
-                    with pc2:
-                        st.metric(
-                            "Gasto Real",
-                            f"R$ {total_personal_actual:.2f}",
-                        )
-                    with pc3:
-                        st.metric(
-                            "Mesada Livre",
-                            f"R$ {mesada_remaining:.2f}",
-                            delta=f"de R\\$ {user.allowance:.2f}",
-                            delta_color="normal" if mesada_remaining >= 0 else "inverse",
-                        )
 
-                    if mesada_remaining < 0:
-                        st.warning(
-                            f"⚠️ {user.name} estourou a mesada em R\\$ {abs(mesada_remaining):.2f} "
-                            f"neste mês! Considere reduzir gastos pessoais ou ajustar o teto."
-                        )
+def _render_closing_history(
+    repo: FinancialRepository,
+    calc: FinancialCalculator,
+    all_expenses: list[Expense],
+    user_a: User,
+    user_b: User,
+) -> None:
+    """Section: Historical monthly closings displayed as tables."""
+    import pandas as pd
 
-                    for r in user_personal:
-                        exp = expense_map.get(r.expense_id)
-                        if not exp:
-                            continue
-                        item_var = r.budgeted_value - r.actual_value
-                        icon = "🟢" if item_var >= 0 else "🔴"
-                        direction = "economia" if item_var >= 0 else "estouro"
-                        type_str = "Periódica" if exp.type == "PERIODIC" else "Mensal"
-                        st.markdown(
-                            f"  {icon} **{exp.name}** *({type_str})*: Orçado R\\$ {r.budgeted_value:.2f} → "
-                            f"Real R\\$ {r.actual_value:.2f} "
-                            f"*(R\\$ {abs(item_var):.2f} de {direction})*"
-                        )
+    today = date.today()
+    current_month = today.strftime("%Y-%m")
 
-            # ── Global top deviations ──
-            if realized_data:
-                full_analysis = calc.calculate_budget_variance(realized_data)
-                if full_analysis["items"]:
-                    st.markdown("---")
-                    st.markdown("#### 🔍 Top 5 Maiores Desvios (Geral)")
-                    top_items = full_analysis["items"][:5]
-                    for item in top_items:
-                        exp_name = expense_name_map.get(item["expense_id"], f"ID {item['expense_id']}")
-                        exp = expense_map.get(item["expense_id"])
-                        scope_icon = "🏠" if (exp and exp.scope == "SHARED") else "👤"
-                        var = item["variance"]
-                        icon = "🟢" if var >= 0 else "🔴"
-                        direction = "economia" if var >= 0 else "estouro"
-                        st.markdown(
-                            f"{icon} {scope_icon} **{exp_name}**: Orçado R\\$ {item['budgeted']:.2f} → "
-                            f"Real R\\$ {item['actual']:.2f} "
-                            f"*(R\\$ {abs(item_var):.2f} de {direction})*"
-                        )
+    available_months = repo.get_available_months()
+    past_months = [m for m in available_months if m != current_month]
+
+    if not past_months:
+        return
+
+    st.markdown("---")
+    st.markdown("### Fechamentos Anteriores")
+    st.caption(
+        "Histórico dos meses já fechados. Clique para expandir e ver o detalhe."
+    )
+
+    expense_map = {e.id: e for e in all_expenses}
+
+    for month in past_months:
+        realized_data = repo.get_monthly_realized(month)
+        if not realized_data:
+            continue
+
+        total_budgeted = sum(r.budgeted_value for r in realized_data)
+        total_actual = sum(r.actual_value for r in realized_data)
+        variance = total_budgeted - total_actual
+        var_icon = "🟢" if variance >= 0 else "🔴"
+        var_label = "economia" if variance >= 0 else "estouro"
+
+        with st.expander(
+            f"📅 {month}  —  Orçado R\\$ {total_budgeted:.2f} | Real R\\$ {total_actual:.2f} | {var_icon} R\\$ {abs(variance):.2f} {var_label}",
+            expanded=False,
+        ):
+            sm1, sm2, sm3 = st.columns(3)
+            with sm1:
+                st.metric("Total Orçado", f"R\\$ {total_budgeted:.2f}")
+            with sm2:
+                st.metric("Total Real", f"R\\$ {total_actual:.2f}")
+            with sm3:
+                st.metric(
+                    f"Variação {var_icon}",
+                    f"R\\$ {abs(variance):.2f}",
+                    delta=var_label,
+                    delta_color="normal" if variance >= 0 else "inverse",
+                )
+
+            # Build table data
+            rows = []
+            for r in realized_data:
+                exp = expense_map.get(r.expense_id)
+                if exp:
+                    name = exp.name
+                    scope = "🏠 Nosso" if exp.scope == "SHARED" else "👤 Meu"
+                    tipo = "Periódica" if exp.type == "PERIODIC" else "Mensal"
+                else:
+                    name = f"Despesa #{r.expense_id}"
+                    scope = "—"
+                    tipo = "—"
+
+                item_var = r.budgeted_value - r.actual_value
+                status = "🟢" if item_var >= 0 else "🔴"
+
+                rows.append({
+                    "Despesa": name,
+                    "Escopo": scope,
+                    "Tipo": tipo,
+                    "Orçado (R$)": f"{r.budgeted_value:.2f}",
+                    "Real (R$)": f"{r.actual_value:.2f}",
+                    "Variação (R$)": f"{'+' if item_var >= 0 else '-'}{abs(item_var):.2f}",
+                    "": status,
+                })
+
+            if rows:
+                df = pd.DataFrame(rows)
+                st.dataframe(df, use_container_width=True, hide_index=True)
 
 
 def render_fechamento_tab(
@@ -394,3 +492,4 @@ def render_fechamento_tab(
 
     _render_couple_celebration_panel(repo, calc, user_a, user_b, expenses_a, expenses_b)
     _render_budget_vs_actual(repo, calc, expenses_a, expenses_b, user_a, user_b)
+    _render_closing_history(repo, calc, expenses_a + expenses_b, user_a, user_b)
